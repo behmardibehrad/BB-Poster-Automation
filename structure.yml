@@ -1,0 +1,20 @@
+country_brands:
+  United_States:
+    - Nyssa_Bloom
+  United_Kingdom:
+    - Sla_Vey
+
+tree:
+  - FB_Account
+  - FB_Page:
+      - Photos
+      - Videos
+      - Feeds
+      - Reels
+      - Stories
+  - Instagram:
+      - Photos
+      - Videos
+      - Feeds
+      - Reels
+      - Stories

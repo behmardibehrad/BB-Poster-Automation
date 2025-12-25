@@ -1,0 +1,20 @@
+2025-12-25 12:49:32 [INFO] [poster] Processing job [3]: Instagram/Photos - United_States/Nyssa_Bloom/Instagram/Photos/test_photo2.jpg
+2025-12-25 12:49:32 [DEBUG] [poster] Copied United_States/Nyssa_Bloom/Instagram/Photos/test_photo2.jpg to media_root/0e7d5c8ca48642979a8e2611de23bcfd.jpg
+2025-12-25 12:49:33 [DEBUG] [poster] Minted token for 0e7d5c8ca48642979a8e2611de23bcfd.jpg: qBUUBjED...
+2025-12-25 12:49:33 [INFO] [poster] Media URL: https://projectmodel.mysticpulsecapital.com/m/qBUUBjEDMbIRQ_lcjXaxpgEzbrlYCKW0
+2025-12-25 12:49:37 [INFO] [poster] Created IG image container: 17845188021652939
+2025-12-25 12:49:37 [ERROR] [poster] API error: {'message': 'Media ID is not available', 'type': 'OAuthException', 'code': 9007, 'error_subcode': 2207027, 'is_transient': False, 'error_user_title': 'Cannot Publish', 'error_user_msg': 'The media is not ready for publishing, please wait for a moment', 'fbtrace_id': 'AqVRW1lIgn1UVCNAE5h35-p'}
+2025-12-25 12:49:37 [DEBUG] [poster] Revoked token qBUUBjED...: True
+2025-12-25 12:49:37 [DEBUG] [poster] Removed 0e7d5c8ca48642979a8e2611de23bcfd.jpg from media_root
+2025-12-25 12:49:37 [ERROR] [poster] Job [3] FAILED: Media ID is not available
+2025-12-25 12:51:58 [INFO] [poster] Processing job [3]: Instagram/Photos - United_States/Nyssa_Bloom/Instagram/Photos/test_photo2.jpg
+2025-12-25 12:51:58 [DEBUG] [poster] Copied United_States/Nyssa_Bloom/Instagram/Photos/test_photo2.jpg to media_root/8ecd98713ad24da1ab9aac9a5b11cfa9.jpg
+2025-12-25 12:51:58 [DEBUG] [poster] Minted token for 8ecd98713ad24da1ab9aac9a5b11cfa9.jpg: jpb2TxSj...
+2025-12-25 12:51:58 [INFO] [poster] Media URL: https://projectmodel.mysticpulsecapital.com/m/jpb2TxSj_dNntqtKYuJnafRapfnxTU-j
+2025-12-25 12:52:02 [INFO] [poster] Created IG image container: 17845188153652939, waiting for processing...
+2025-12-25 12:52:02 [DEBUG] [poster] Container 17845188153652939 status: IN_PROGRESS
+2025-12-25 12:52:13 [DEBUG] [poster] Container 17845188153652939 status: FINISHED
+2025-12-25 12:52:14 [INFO] [poster] Published IG image: 17924642865195437
+2025-12-25 12:52:14 [DEBUG] [poster] Revoked token jpb2TxSj...: True
+2025-12-25 12:52:14 [DEBUG] [poster] Removed 8ecd98713ad24da1ab9aac9a5b11cfa9.jpg from media_root
+2025-12-25 12:52:14 [INFO] [poster] Job [3] SUCCESS: 17924642865195437
