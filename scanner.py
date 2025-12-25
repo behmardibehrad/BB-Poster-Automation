@@ -2,16 +2,25 @@
 """
 Scanner module for BB-Poster-Automation.
 Detects new media files in the folder structure and queues them for posting.
+
+File naming convention for scheduled posts:
+    MM_DD_YYYY_am.jpg  ? Posts on that date in the morning
+    MM_DD_YYYY_pm.mp4  ? Posts on that date in the afternoon
+    
+Caption files:
+    MM_DD_YYYY_am.txt  ? Caption for the corresponding media file
 """
 
 import os
+import re
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple, List
 from dataclasses import dataclass
 
 import db
-from config import PROJECT_ROOT, setup_logger
+from config import PROJECT_ROOT, POSTING_SCHEDULE, setup_logger
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -42,6 +51,96 @@ IGNORE_PATTERNS = {
 
 # Logger (initialized in main)
 logger = None
+
+
+# -----------------------------------------------------------------------------
+# Filename Parsing for Scheduled Posts
+# -----------------------------------------------------------------------------
+
+# Pattern: MM_DD_YYYY_am or MM_DD_YYYY_pm (with any extension)
+SCHEDULED_FILENAME_PATTERN = re.compile(
+    r'^(\d{1,2})_(\d{1,2})_(\d{4})_(am|pm)\.[a-zA-Z0-9]+$',
+    re.IGNORECASE
+)
+
+
+def parse_scheduled_filename(filename: str) -> Optional[Tuple[datetime, str]]:
+    """
+    Parse a filename like '12_26_2025_am.jpg' to extract date and time slot.
+    
+    Returns:
+        Tuple of (date, time_slot) or None if not a scheduled filename.
+        time_slot is 'am' or 'pm' (lowercase)
+    """
+    match = SCHEDULED_FILENAME_PATTERN.match(filename)
+    if not match:
+        return None
+    
+    month, day, year, time_slot = match.groups()
+    
+    try:
+        date = datetime(int(year), int(month), int(day))
+        return date, time_slot.lower()
+    except ValueError:
+        return None
+
+
+def calculate_scheduled_time(
+    date: datetime,
+    time_slot: str,
+    content_type: str
+) -> Optional[int]:
+    """
+    Calculate the Unix timestamp for when a post should go live.
+    
+    Args:
+        date: The date from the filename
+        time_slot: 'am' or 'pm'
+        content_type: 'Photos', 'Videos', 'Reels', etc.
+    
+    Returns:
+        Unix timestamp or None if content_type not in schedule
+    """
+    schedule = POSTING_SCHEDULE.get(content_type)
+    if not schedule:
+        return None
+    
+    time_str = schedule.get(time_slot)
+    if not time_str:
+        return None
+    
+    # Parse time string like "10:00" or "15:00"
+    hour, minute = map(int, time_str.split(':'))
+    
+    scheduled_dt = date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return int(scheduled_dt.timestamp())
+
+
+def find_caption_file(media_path: str) -> Optional[str]:
+    """
+    Look for a caption file associated with a media file.
+    
+    For a file like '12_26_2025_am.jpg', looks for '12_26_2025_am.txt'
+    in the same folder.
+    
+    Returns:
+        Caption text or None if no caption file found
+    """
+    # Get base name without extension
+    base = os.path.splitext(media_path)[0]
+    
+    # Check for .txt file with same base name
+    caption_path = base + ".txt"
+    if os.path.isfile(caption_path):
+        try:
+            with open(caption_path, "r", encoding="utf-8") as f:
+                caption = f.read().strip()
+                if caption:
+                    return caption
+        except Exception as e:
+            logger.warning(f"Could not read caption file {caption_path}: {e}")
+    
+    return None
 
 # -----------------------------------------------------------------------------
 # Path Parsing
@@ -236,6 +335,21 @@ def scan_all() -> Tuple[int, int]:
             logger.warning(f"Skipping empty file: {parsed.file_path}")
             continue
         
+        # Parse scheduled filename (e.g., 12_26_2025_am.jpg)
+        scheduled_for = None
+        schedule_info = parse_scheduled_filename(parsed.filename)
+        if schedule_info:
+            date, time_slot = schedule_info
+            scheduled_for = calculate_scheduled_time(date, time_slot, parsed.content_type)
+            if scheduled_for:
+                scheduled_dt = datetime.fromtimestamp(scheduled_for)
+                logger.debug(f"Scheduled {parsed.filename} for {scheduled_dt}")
+        
+        # Look for caption file
+        caption = find_caption_file(abs_path)
+        if caption:
+            logger.debug(f"Found caption for {parsed.filename}: {caption[:50]}...")
+        
         row_id = db.insert_media_file(
             file_path=parsed.file_path,
             file_size=file_size,
@@ -243,12 +357,18 @@ def scan_all() -> Tuple[int, int]:
             country=parsed.country,
             model_name=parsed.model_name,
             platform=parsed.platform,
-            content_type=parsed.content_type
+            content_type=parsed.content_type,
+            caption=caption,
+            scheduled_for=scheduled_for
         )
         
         if row_id:
             added += 1
-            logger.info(f"NEW: [{row_id}] {parsed.platform}/{parsed.content_type} - {parsed.file_path}")
+            schedule_note = ""
+            if scheduled_for:
+                scheduled_dt = datetime.fromtimestamp(scheduled_for)
+                schedule_note = f" [scheduled: {scheduled_dt.strftime('%m/%d/%Y %I:%M %p')}]"
+            logger.info(f"NEW: [{row_id}] {parsed.platform}/{parsed.content_type} - {parsed.file_path}{schedule_note}")
     
     return len(all_files), added
 

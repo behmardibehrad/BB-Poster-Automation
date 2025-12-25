@@ -19,6 +19,34 @@ MEDIA_ROOT = os.path.join(PROJECT_ROOT, "media_root")
 MEDIA_SERVER_SCRIPT = os.path.join(PROJECT_ROOT, "media_server.py")
 
 # -----------------------------------------------------------------------------
+# Posting Schedule (24-hour format)
+# Files named like: 12_26_2025_am.jpg or 12_26_2025_pm.mp4
+# -----------------------------------------------------------------------------
+
+POSTING_SCHEDULE = {
+    "Photos": {
+        "am": "10:00",
+        "pm": "15:00",
+    },
+    "Feeds": {
+        "am": "10:00",
+        "pm": "15:00",
+    },
+    "Videos": {
+        "am": "11:00",  # 1 hour after photo
+        "pm": "16:00",
+    },
+    "Reels": {
+        "am": "11:00",
+        "pm": "16:00",
+    },
+    "Stories": {
+        "am": "10:30",
+        "pm": "15:30",
+    },
+}
+
+# -----------------------------------------------------------------------------
 # Media Server / Cloudflare
 # -----------------------------------------------------------------------------
 
@@ -123,3 +151,19 @@ def setup_logger(name: str, verbose: bool = False) -> logging.Logger:
     logger.addHandler(combined_handler)
     
     return logger
+
+
+# -----------------------------------------------------------------------------
+# Quick test
+# -----------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    # Test logging setup
+    log = setup_logger("config_test", verbose=True)
+    log.info("Config loaded successfully")
+    log.debug("Debug message test")
+    log.warning("Warning message test")
+    log.error("Error message test")
+    print(f"\nLog files created in: {LOG_DIR}")
+    print(f"  - {LOG_DIR}/config_test.log")
+    print(f"  - {LOG_DIR}/all.log")

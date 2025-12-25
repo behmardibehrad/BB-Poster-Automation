@@ -1,3 +1,10 @@
 2025-12-25 12:49:24 [INFO] [scanner] Discovered country folders: ['United_Kingdom', 'United_States']
 2025-12-25 12:49:24 [INFO] [scanner] Total media files found: 2
 2025-12-25 12:49:24 [INFO] [scanner] NEW: [3] Instagram/Photos - United_States/Nyssa_Bloom/Instagram/Photos/test_photo2.jpg
+2025-12-25 13:26:11 [INFO] [scanner] Discovered country folders: ['United_Kingdom', 'United_States']
+2025-12-25 13:26:11 [INFO] [scanner] Total media files found: 1
+2025-12-25 13:26:11 [INFO] [scanner] NEW: [4] Instagram/Photos - United_States/Nyssa_Bloom/Instagram/Photos/12_26_2025_am.jpg [scheduled: 12/26/2025 10:00 AM]
+2025-12-25 13:35:29 [INFO] [scanner] Starting scanner daemon (interval: 60s)
+2025-12-25 13:35:29 [INFO] [scanner] Project root: /home/bebehmar/BB-Poster-Automation
+2025-12-25 13:35:29 [INFO] [scanner] Discovered country folders: ['United_Kingdom', 'United_States']
+2025-12-25 13:35:29 [INFO] [scanner] Total media files found: 0

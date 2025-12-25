@@ -18,3 +18,4 @@
 2025-12-25 12:52:14 [DEBUG] [poster] Revoked token jpb2TxSj...: True
 2025-12-25 12:52:14 [DEBUG] [poster] Removed 8ecd98713ad24da1ab9aac9a5b11cfa9.jpg from media_root
 2025-12-25 12:52:14 [INFO] [poster] Job [3] SUCCESS: 17924642865195437
+2025-12-25 13:35:30 [INFO] [poster] Starting poster worker (interval: 60s, batch: 1)

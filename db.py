@@ -140,7 +140,8 @@ def insert_media_file(
     model_name: str,
     platform: str,
     content_type: str,
-    caption: Optional[str] = None
+    caption: Optional[str] = None,
+    scheduled_for: Optional[int] = None
 ) -> Optional[int]:
     """
     Insert a new media file into the queue.
@@ -152,11 +153,11 @@ def insert_media_file(
                 """
                 INSERT INTO media_files 
                     (file_path, file_size, file_mtime, detected_at,
-                     country, model_name, platform, content_type, caption)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     country, model_name, platform, content_type, caption, scheduled_for)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (file_path, file_size, file_mtime, int(time.time()),
-                 country, model_name, platform, content_type, caption)
+                 country, model_name, platform, content_type, caption, scheduled_for)
             )
             con.commit()
             return cur.lastrowid
@@ -355,6 +356,25 @@ def upsert_credentials(
         con.commit()
 
 
+def get_scheduled_jobs(days_ahead: int = 7) -> List[Dict[str, Any]]:
+    """Get jobs scheduled for the next N days."""
+    now = int(time.time())
+    future = now + (days_ahead * 86400)
+    
+    with get_connection() as con:
+        cur = con.execute(
+            """
+            SELECT * FROM media_files 
+            WHERE status = ? 
+              AND scheduled_for IS NOT NULL
+              AND scheduled_for BETWEEN ? AND ?
+            ORDER BY scheduled_for ASC
+            """,
+            (STATUS_PENDING, now, future)
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
 # -----------------------------------------------------------------------------
 # Statistics
 # -----------------------------------------------------------------------------
@@ -393,11 +413,13 @@ def get_stats() -> Dict[str, Any]:
 if __name__ == "__main__":
     import argparse
     import json
+    from datetime import datetime
     
     parser = argparse.ArgumentParser(description="Database management for BB-Poster")
     parser.add_argument("--init", action="store_true", help="Initialize database")
     parser.add_argument("--stats", action="store_true", help="Show queue statistics")
     parser.add_argument("--pending", action="store_true", help="List pending jobs")
+    parser.add_argument("--scheduled", action="store_true", help="List scheduled jobs for next 7 days")
     parser.add_argument("--reset-stale", action="store_true", help="Reset stale 'posting' jobs")
     parser.add_argument("--retry-failed", action="store_true", help="Retry failed jobs")
     args = parser.parse_args()
@@ -411,9 +433,26 @@ if __name__ == "__main__":
         init_db()
         jobs = get_pending_jobs(limit=20)
         for job in jobs:
-            print(f"[{job['id']}] {job['platform']}/{job['content_type']}: {job['file_path']}")
+            scheduled = ""
+            if job.get("scheduled_for"):
+                dt = datetime.fromtimestamp(job["scheduled_for"])
+                scheduled = f" [scheduled: {dt.strftime('%m/%d %I:%M %p')}]"
+            print(f"[{job['id']}] {job['platform']}/{job['content_type']}: {job['file_path']}{scheduled}")
         if not jobs:
             print("No pending jobs.")
+    elif args.scheduled:
+        init_db()
+        jobs = get_scheduled_jobs(days_ahead=7)
+        if jobs:
+            print(f"Scheduled posts for next 7 days ({len(jobs)} total):\n")
+            for job in jobs:
+                dt = datetime.fromtimestamp(job["scheduled_for"])
+                caption_preview = ""
+                if job.get("caption"):
+                    caption_preview = f" - \"{job['caption'][:30]}...\""
+                print(f"  {dt.strftime('%m/%d/%Y %I:%M %p')} | [{job['id']}] {job['platform']}/{job['content_type']}: {job['file_path']}{caption_preview}")
+        else:
+            print("No scheduled jobs for the next 7 days.")
     elif args.reset_stale:
         init_db()
         count = reset_stale_jobs()
