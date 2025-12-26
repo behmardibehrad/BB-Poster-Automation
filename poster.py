@@ -352,6 +352,15 @@ def post_instagram_story(
             return False, "", error
         
         container_id = result.get("id")
+        if not container_id:
+            return False, "", "No container ID returned"
+        
+        logger.info(f"Created IG STORIES container: {container_id}, waiting for processing...")
+        
+        # Wait for container to be ready before publishing
+        ready, status = wait_for_ig_container(container_id, access_token, timeout=60)
+        if not ready:
+            return False, container_id, f"Container not ready: {status}"
         
         success, result = api_request(
             "POST", f"{ig_user_id}/media_publish",
@@ -363,7 +372,9 @@ def post_instagram_story(
             error = result.get("error", {}).get("message", "Failed to publish")
             return False, container_id, error
         
-        return True, result.get("id"), ""
+        post_id = result.get("id")
+        logger.info(f"Published IG STORIES: {post_id}")
+        return True, post_id, ""
 
 
 # -----------------------------------------------------------------------------

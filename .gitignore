@@ -1,0 +1,21 @@
+# Content folders (images, captions)
+United_States/
+United_Kingdom/
+
+# Database files
+*.sqlite3
+
+# Logs
+logs/
+
+# Token/media cache
+media_tokens/
+media_root/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+.env

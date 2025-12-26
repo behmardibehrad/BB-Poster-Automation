@@ -154,6 +154,29 @@ def start_poster() -> bool:
         return False
 
 
+def start_responder() -> bool:
+    """Start comment responder daemon if not running."""
+    if is_process_running("comment_responder.py"):
+        print("? Comment Responder already running")
+        return True
+    
+    print("? Starting comment responder...")
+    subprocess.Popen(
+        [sys.executable, os.path.join(PROJECT_ROOT, "comment_responder.py")],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True
+    )
+    time.sleep(1)
+    
+    if is_process_running("comment_responder.py"):
+        print("? Comment Responder started")
+        return True
+    else:
+        print("? Failed to start comment responder")
+        return False
+
+
 # -----------------------------------------------------------------------------
 # Commands
 # -----------------------------------------------------------------------------
@@ -180,6 +203,7 @@ def start_all():
     success = start_cloudflared() and success
     success = start_scanner() and success
     success = start_poster() and success
+    success = start_responder() and success
     
     print()
     if success:
@@ -208,6 +232,7 @@ def show_status():
         ("Cloudflare Tunnel", "cloudflared"),
         ("Scanner", "scanner.py"),
         ("Poster", "poster.py"),
+        ("Comment Responder", "comment_responder.py"),
     ]
     
     all_running = True
@@ -240,6 +265,24 @@ def show_status():
     except Exception:
         pass
     
+    # Show comment responder stats
+    try:
+        result = subprocess.run(
+            [sys.executable, os.path.join(PROJECT_ROOT, "comment_responder.py"), "--stats"],
+            capture_output=True,
+            text=True
+        )
+        if "by_status" in result.stdout:
+            import json
+            stats = json.loads(result.stdout.strip())
+            print()
+            print("Comment Responder Stats:")
+            print(f"  Pending replies: {stats.get('by_status', {}).get('pending', 0)}")
+            print(f"  Sent (24h): {stats.get('replied_24h', 0)}")
+            print(f"  Sent (1h): {stats.get('replied_1h', 0)}")
+    except Exception:
+        pass
+    
     print()
     return all_running
 
@@ -252,6 +295,7 @@ def stop_all():
     print()
     
     services = [
+        ("Comment Responder", "comment_responder.py"),
         ("Poster", "poster.py"),
         ("Scanner", "scanner.py"),
         ("Media Server", "media_server.py"),
