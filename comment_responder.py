@@ -30,6 +30,16 @@ from config import setup_logger, FB_GRAPH_API, DB_FILE
 # Configuration
 # -----------------------------------------------------------------------------
 
+def load_env():
+    env_file = os.path.join(PROJECT_ROOT, ".env")
+    if os.path.exists(env_file):
+        with open(env_file) as f:
+            for line in f:
+                if line.strip() and not line.startswith("#"):
+                    key, value = line.strip().split("=", 1)
+                    os.environ[key] = value
+
+load_env()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 # Polling interval (seconds)
