@@ -43,7 +43,7 @@ load_env()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 # Polling interval (seconds)
-POLL_INTERVAL = 600  # 10 minutes
+POLL_INTERVAL = 180  # 10 minutes
 
 # Reply delay range (seconds)
 MIN_REPLY_DELAY = 900   # 15 minutes
@@ -441,9 +441,10 @@ def run_daemon(log):
     while True:
         try:
             # Scan for new comments
+            log.info("Polling for comments...")
             new_comments = scan_for_new_comments(log)
+            log.info(f"Found {len(new_comments)} new comment(s)")
             if new_comments:
-                log.info(f"Found {len(new_comments)} new comment(s)")
                 process_new_comments(new_comments, log)
             
             # Send pending replies
