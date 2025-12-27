@@ -177,6 +177,29 @@ def start_responder() -> bool:
         return False
 
 
+def start_dashboard() -> bool:
+    """Start dashboard web server if not running."""
+    if is_process_running("dashboard.py"):
+        print("? Dashboard already running")
+        return True
+    
+    print("? Starting dashboard...")
+    subprocess.Popen(
+        [sys.executable, os.path.join(PROJECT_ROOT, "dashboard.py")],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True
+    )
+    time.sleep(1)
+    
+    if is_process_running("dashboard.py"):
+        print("? Dashboard started (http://localhost:5000)")
+        return True
+    else:
+        print("? Failed to start dashboard")
+        return False
+
+
 # -----------------------------------------------------------------------------
 # Commands
 # -----------------------------------------------------------------------------
@@ -204,6 +227,7 @@ def start_all():
     success = start_scanner() and success
     success = start_poster() and success
     success = start_responder() and success
+    success = start_dashboard() and success
     
     print()
     if success:
@@ -212,6 +236,7 @@ def start_all():
         print("=" * 50)
         print()
         print("View logs:    tail -f ~/BB-Poster-Automation/logs/all.log")
+        print("Dashboard:    http://localhost:5000")
         print("Check status: python3 run.py --status")
         print("Stop all:     python3 run.py --stop")
         print()
@@ -233,13 +258,17 @@ def show_status():
         ("Scanner", "scanner.py"),
         ("Poster", "poster.py"),
         ("Comment Responder", "comment_responder.py"),
+        ("Dashboard", "dashboard.py"),
     ]
     
     all_running = True
     for name, search in services:
         pids = get_process_pid(search)
         if pids:
-            print(f"? {name}: Running (PID: {', '.join(map(str, pids))})")
+            if name == "Dashboard":
+                print(f"? {name}: Running (PID: {', '.join(map(str, pids))}) - http://localhost:5000")
+            else:
+                print(f"? {name}: Running (PID: {', '.join(map(str, pids))})")
         else:
             print(f"? {name}: Not running")
             all_running = False
@@ -257,7 +286,6 @@ def show_status():
             print("Queue Stats:")
             import json
             lines = result.stdout.strip().split('\n')
-            # Find the JSON part (skip "Database initialized" line)
             json_str = '\n'.join(lines[1:]) if len(lines) > 1 else lines[0]
             stats = json.loads(json_str)
             print(f"  Pending: {stats.get('by_status', {}).get('pending', 0)}")
@@ -295,6 +323,7 @@ def stop_all():
     print()
     
     services = [
+        ("Dashboard", "dashboard.py"),
         ("Comment Responder", "comment_responder.py"),
         ("Poster", "poster.py"),
         ("Scanner", "scanner.py"),
