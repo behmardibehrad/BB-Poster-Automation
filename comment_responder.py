@@ -49,6 +49,9 @@ MAX_REPLY_DELAY = 2700  # 45 minutes
 MAX_REPLIES_PER_HOUR = 8
 MAX_REPLIES_PER_USER_PER_POST = 3  # Max conversation depth per user
 
+# Instagram username (to skip our own replies when scanning)
+INSTAGRAM_USERNAME = "nyssa_bloom_modeling"
+
 # -----------------------------------------------------------------------------
 # Nyssa's Personality Prompt
 # -----------------------------------------------------------------------------
@@ -149,16 +152,6 @@ def get_reply_count_for_user_on_post(media_id, username):
     con.close()
     return count
 
-def get_nyssa_comment_ids():
-    """Get IDs of comments Nyssa has posted (for scanning replies)."""
-    con = sqlite3.connect(DB_FILE)
-    rows = con.execute("""
-        SELECT nyssa_comment_id FROM comment_replies 
-        WHERE status = 'sent' AND nyssa_comment_id IS NOT NULL
-    """).fetchall()
-    con.close()
-    return {row[0] for row in rows if row[0]}
-
 def add_pending_reply(comment_id, media_id, username, comment_text, reply_text, scheduled_at, parent_comment_id=None):
     """Add a reply to the queue."""
     con = sqlite3.connect(DB_FILE)
@@ -256,7 +249,7 @@ def get_comments(media_id, access_token):
     return response.json()
 
 def get_comment_replies(comment_id, access_token):
-    """Get replies to a specific comment."""
+    """Get replies to a specific comment (only works on top-level comments)."""
     url = f"{FB_GRAPH_API}/{comment_id}/replies"
     params = {
         "fields": "id,text,timestamp,username",
@@ -346,7 +339,7 @@ def generate_reply(comment_text, post_caption="", is_reply_to_reply=False, previ
 # -----------------------------------------------------------------------------
 
 def scan_for_new_comments(log):
-    """Scan for new comments AND replies to Nyssa's comments."""
+    """Scan for new comments AND replies to comments we've replied to."""
     try:
         ig_user_id, access_token = get_credentials()
     except Exception as e:
@@ -354,7 +347,6 @@ def scan_for_new_comments(log):
         return []
     
     replied_ids = get_replied_comment_ids()
-    nyssa_comment_ids = get_nyssa_comment_ids()
     new_comments = []
     
     # Get recent media
@@ -390,10 +382,19 @@ def scan_for_new_comments(log):
                     "parent_comment_id": None
                 })
     
-    # Scan replies to Nyssa's comments
-    for nyssa_comment_id in nyssa_comment_ids:
+    # Scan replies to TOP-LEVEL comments we've already replied to
+    # (Instagram API only allows /replies on top-level comments)
+    con = sqlite3.connect(DB_FILE)
+    sent_comments = con.execute('''
+        SELECT comment_id, media_id, username, comment_text, reply_text 
+        FROM comment_replies 
+        WHERE status = "sent"
+    ''').fetchall()
+    con.close()
+    
+    for orig_comment_id, media_id, orig_username, orig_text, nyssa_reply in sent_comments:
         try:
-            replies_response = get_comment_replies(nyssa_comment_id, access_token)
+            replies_response = get_comment_replies(orig_comment_id, access_token)
             if "data" not in replies_response:
                 continue
             
@@ -401,24 +402,13 @@ def scan_for_new_comments(log):
                 reply_id = reply["id"]
                 username = reply.get("username", "unknown")
                 
+                # Skip Nyssa's own replies
+                if username == INSTAGRAM_USERNAME:
+                    continue
+                
+                # Skip already processed
                 if reply_id in replied_ids:
                     continue
-                
-                # Get media_id for this thread
-                con = sqlite3.connect(DB_FILE)
-                row = con.execute("""
-                    SELECT media_id, comment_text, reply_text 
-                    FROM comment_replies 
-                    WHERE nyssa_comment_id = ?
-                """, (nyssa_comment_id,)).fetchone()
-                con.close()
-                
-                if not row:
-                    continue
-                
-                media_id = row[0]
-                original_comment = row[1]
-                nyssa_reply = row[2]
                 
                 # Check conversation limit
                 reply_count = get_reply_count_for_user_on_post(media_id, username)
@@ -429,12 +419,12 @@ def scan_for_new_comments(log):
                         INSERT OR IGNORE INTO comment_replies 
                         (comment_id, media_id, username, comment_text, reply_text, status, parent_comment_id)
                         VALUES (?, ?, ?, ?, ?, 'skipped', ?)
-                    """, (reply_id, media_id, username, reply.get("text", ""), "Max conversation limit reached", nyssa_comment_id))
+                    """, (reply_id, media_id, username, reply.get("text", ""), "Max conversation limit reached", orig_comment_id))
                     con.commit()
                     con.close()
                     continue
                 
-                previous_context = f"They said: \"{original_comment[:50]}\" -> You replied: \"{nyssa_reply[:50]}\""
+                previous_context = f"They said: \"{orig_text[:50]}\" -> You replied: \"{nyssa_reply[:50]}\""
                 
                 new_comments.append({
                     "comment_id": reply_id,
@@ -443,12 +433,12 @@ def scan_for_new_comments(log):
                     "text": reply.get("text", ""),
                     "caption": "",
                     "is_reply_to_reply": True,
-                    "parent_comment_id": nyssa_comment_id,
+                    "parent_comment_id": orig_comment_id,
                     "previous_context": previous_context
                 })
                 
         except Exception as e:
-            log.debug(f"Error scanning replies to {nyssa_comment_id}: {e}")
+            log.debug(f"Error scanning replies to {orig_comment_id}: {e}")
             continue
     
     return new_comments
