@@ -1,18 +1,84 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Enhanced Dashboard for BB-Poster-Automation
-Includes Instagram profile stats, post performance, and engagement metrics.
+Enhanced Dashboard with Login - BB-Poster-Automation
 """
-import os, sys, json, sqlite3, subprocess, requests
-from datetime import datetime
-from flask import Flask, render_template_string
+import os, sys, json, sqlite3, subprocess, requests, secrets
+from datetime import datetime, timedelta
+from functools import wraps
+from flask import Flask, render_template_string, request, redirect, url_for, make_response
 
 PROJECT_ROOT = os.path.expanduser("~/BB-Poster-Automation")
 DB_FILE = os.path.join(PROJECT_ROOT, "poster.sqlite3")
 FB_GRAPH_API = "https://graph.facebook.com/v21.0"
 
 app = Flask(__name__)
+app.secret_key = secrets.token_hex(32)
+
+# ============== CHANGE THIS PASSWORD ==============
+DASHBOARD_PASSWORD = "ThisIsaBadPassword.2025!" 
+# ==================================================
+
+COOKIE_NAME = "nyssa_auth"
+COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
+
+def generate_auth_token():
+    return secrets.token_hex(32)
+
+AUTH_TOKEN = generate_auth_token()
+
+def is_authenticated():
+    return request.cookies.get(COOKIE_NAME) == AUTH_TOKEN
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not is_authenticated():
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Nyssa Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-box { background: rgba(255,255,255,0.05); padding: 40px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); width: 100%; max-width: 400px; text-align: center; }
+        h1 { color: #e94560; margin-bottom: 10px; font-size: 1.8rem; }
+        .subtitle { color: #888; margin-bottom: 30px; }
+        input[type="password"] { width: 100%; padding: 15px; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; background: rgba(255,255,255,0.05); color: #fff; font-size: 1rem; margin-bottom: 20px; }
+        input[type="password"]:focus { outline: none; border-color: #e94560; }
+        button { width: 100%; padding: 15px; background: #e94560; border: none; border-radius: 10px; color: #fff; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #d63850; }
+        .error { color: #f87171; margin-bottom: 20px; padding: 10px; background: rgba(248,113,113,0.1); border-radius: 8px; }
+        .remember { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 20px; color: #888; }
+        .remember input { width: auto; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h1>?? Nyssa Dashboard</h1>
+        <p class="subtitle">Enter password to continue</p>
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        <form method="POST">
+            <input type="password" name="password" placeholder="Password" autofocus>
+            <div class="remember">
+                <input type="checkbox" name="remember" id="remember" checked>
+                <label for="remember">Remember this device (30 days)</label>
+            </div>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
 
 DASHBOARD_HTML = """
 <!DOCTYPE html>
@@ -43,8 +109,6 @@ DASHBOARD_HTML = """
         .big-number { font-size: 2.5rem; font-weight: bold; color: #e94560; }
         .big-label { color: #888; font-size: 0.85rem; }
         .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; text-align: center; }
-
-        /* Profile Section */
         .profile-card { display: flex; align-items: center; gap: 20px; }
         .profile-avatar { width: 80px; height: 80px; border-radius: 50%; border: 3px solid #e94560; object-fit: cover; }
         .profile-info { flex: 1; }
@@ -55,13 +119,9 @@ DASHBOARD_HTML = """
         .profile-stat { text-align: center; }
         .profile-stat-num { font-size: 1.5rem; font-weight: bold; color: #fff; }
         .profile-stat-label { color: #888; font-size: 0.75rem; text-transform: uppercase; }
-
-        /* Engagement Card */
         .engagement-value { font-size: 2rem; font-weight: bold; color: #4ade80; }
         .engagement-label { color: #888; font-size: 0.8rem; }
         .engagement-detail { color: #aaa; font-size: 0.85rem; margin-top: 5px; }
-
-        /* Posts Grid */
         .posts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
         .post-card { background: rgba(255,255,255,0.03); border-radius: 10px; overflow: hidden; transition: transform 0.2s; }
         .post-card:hover { transform: scale(1.02); }
@@ -69,10 +129,7 @@ DASHBOARD_HTML = """
         .post-image-placeholder { width: 100%; aspect-ratio: 1; background: linear-gradient(135deg, #2a2a4a 0%, #1a1a3a 100%); display: flex; align-items: center; justify-content: center; color: #666; font-size: 2rem; }
         .post-stats { padding: 12px; display: flex; justify-content: space-between; align-items: center; }
         .post-stat { display: flex; align-items: center; gap: 5px; color: #aaa; font-size: 0.85rem; }
-        .post-stat svg { width: 16px; height: 16px; }
         .post-type { font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; background: rgba(233, 69, 96, 0.2); color: #e94560; }
-
-        /* Activity & Services */
         .activity-item { padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 8px; font-size: 0.85rem; }
         .activity-time { color: #888; font-size: 0.75rem; }
         .reply-text { color: #4ade80; margin: 5px 0; font-style: italic; }
@@ -80,8 +137,6 @@ DASHBOARD_HTML = """
         .service-dot { width: 10px; height: 10px; border-radius: 50%; }
         .service-dot.running { background: #4ade80; }
         .service-dot.stopped { background: #f87171; }
-
-        /* Comment History */
         .comment-list { max-height: 500px; overflow-y: auto; }
         .comment-item { padding: 15px; background: rgba(255,255,255,0.03); border-radius: 10px; margin-bottom: 10px; border-left: 3px solid #e94560; }
         .comment-item.sent { border-left-color: #4ade80; }
@@ -102,24 +157,23 @@ DASHBOARD_HTML = """
         .comment-stat { text-align: center; }
         .comment-stat-num { font-size: 1.5rem; font-weight: bold; color: #e94560; }
         .comment-stat-label { font-size: 0.75rem; color: #888; }
-
         .refresh-note { text-align: center; color: #666; font-size: 0.8rem; margin-top: 20px; }
         .error-note { color: #f87171; font-size: 0.8rem; text-align: center; padding: 20px; }
-
+        .logout-btn { position: fixed; top: 20px; right: 20px; background: rgba(255,255,255,0.1); border: none; color: #888; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; }
+        .logout-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: #e94560; border-radius: 4px; }
     </style>
 </head>
 <body>
+    <a href="/logout" class="logout-btn">Logout</a>
     <div class="container">
-        <h1>🌸 Nyssa Bloom Dashboard</h1>
+        <h1>?? Nyssa Bloom Dashboard</h1>
         <p class="subtitle">Last updated: {{ current_time }}</p>
-
-        <!-- Profile & Engagement Row -->
         <div class="grid">
             <div class="card" style="grid-column: span 2;">
-                <h2>📸 Instagram Profile</h2>
+                <h2>?? Instagram Profile</h2>
                 {% if profile %}
                 <div class="profile-card">
                     <img src="{{ profile.avatar }}" alt="Profile" class="profile-avatar" onerror="this.style.display='none'">
@@ -130,26 +184,14 @@ DASHBOARD_HTML = """
                     </div>
                 </div>
                 <div class="profile-stats">
-                    <div class="profile-stat">
-                        <div class="profile-stat-num">{{ profile.followers }}</div>
-                        <div class="profile-stat-label">Followers</div>
-                    </div>
-                    <div class="profile-stat">
-                        <div class="profile-stat-num">{{ profile.following }}</div>
-                        <div class="profile-stat-label">Following</div>
-                    </div>
-                    <div class="profile-stat">
-                        <div class="profile-stat-num">{{ profile.posts }}</div>
-                        <div class="profile-stat-label">Posts</div>
-                    </div>
+                    <div class="profile-stat"><div class="profile-stat-num">{{ profile.followers }}</div><div class="profile-stat-label">Followers</div></div>
+                    <div class="profile-stat"><div class="profile-stat-num">{{ profile.following }}</div><div class="profile-stat-label">Following</div></div>
+                    <div class="profile-stat"><div class="profile-stat-num">{{ profile.posts }}</div><div class="profile-stat-label">Posts</div></div>
                 </div>
-                {% else %}
-                <div class="error-note">Could not load Instagram profile</div>
-                {% endif %}
+                {% else %}<div class="error-note">Could not load Instagram profile</div>{% endif %}
             </div>
-
             <div class="card">
-                <h2>📊 Engagement</h2>
+                <h2>?? Engagement</h2>
                 {% if engagement %}
                 <div style="text-align: center; padding: 10px 0;">
                     <div class="engagement-value">{{ engagement.rate }}%</div>
@@ -160,16 +202,12 @@ DASHBOARD_HTML = """
                 <div class="stat-row"><span class="stat-label">Avg Comments</span><span class="stat-value status-pending">{{ engagement.avg_comments }}</span></div>
                 <div class="stat-row"><span class="stat-label">Total Likes</span><span class="stat-value">{{ engagement.total_likes }}</span></div>
                 <div class="stat-row"><span class="stat-label">Total Comments</span><span class="stat-value">{{ engagement.total_comments }}</span></div>
-                {% else %}
-                <div class="error-note">Could not calculate engagement</div>
-                {% endif %}
+                {% else %}<div class="error-note">Could not calculate engagement</div>{% endif %}
             </div>
         </div>
-
-        <!-- Services & System Stats -->
         <div class="grid">
             <div class="card">
-                <h2>⚙️ Services Status</h2>
+                <h2>?? Services Status</h2>
                 {% for service in services %}
                 <div class="service-status">
                     <div class="service-dot {{ 'running' if service.running else 'stopped' }}"></div>
@@ -179,7 +217,7 @@ DASHBOARD_HTML = """
                 {% endfor %}
             </div>
             <div class="card">
-                <h2>📬 Posts Overview</h2>
+                <h2>?? Posts Overview</h2>
                 <div class="stat-grid">
                     <div><div class="big-number">{{ posts_today }}</div><div class="big-label">Posted Today</div></div>
                     <div><div class="big-number status-pending">{{ posts_pending }}</div><div class="big-label">Pending</div></div>
@@ -187,7 +225,7 @@ DASHBOARD_HTML = """
                 </div>
             </div>
             <div class="card">
-                <h2>💬 Comment Responder</h2>
+                <h2>?? Comment Responder</h2>
                 <div class="stat-grid">
                     <div><div class="big-number status-ok">{{ comments_sent }}</div><div class="big-label">Sent</div></div>
                     <div><div class="big-number status-pending">{{ comments_pending }}</div><div class="big-label">Pending</div></div>
@@ -195,80 +233,57 @@ DASHBOARD_HTML = """
                 </div>
             </div>
         </div>
-
-        <!-- Recent Instagram Posts -->
         <div class="grid">
             <div class="card card-full">
-                <h2>📷 Recent Instagram Posts</h2>
+                <h2>?? Recent Instagram Posts</h2>
                 {% if ig_posts %}
                 <div class="posts-grid">
                     {% for post in ig_posts %}
                     <a href="{{ post.permalink }}" target="_blank" style="text-decoration: none; color: inherit;">
                         <div class="post-card">
-                            {% if post.thumbnail %}
-                            <img src="{{ post.thumbnail }}" alt="Post" class="post-image" onerror="this.outerHTML='<div class=post-image-placeholder>{{ post.media_type[0] }}</div>'">
-                            {% else %}
-                            <div class="post-image-placeholder">{{ post.media_type[0] if post.media_type else '?' }}</div>
-                            {% endif %}
+                            {% if post.thumbnail %}<img src="{{ post.thumbnail }}" alt="Post" class="post-image">{% else %}<div class="post-image-placeholder">{{ post.media_type[0] if post.media_type else '?' }}</div>{% endif %}
                             <div class="post-stats">
-                                <div style="display: flex; gap: 15px;">
-                                    <div class="post-stat">❤️ {{ post.likes }}</div>
-                                    <div class="post-stat">💬 {{ post.comments }}</div>
-                                </div>
+                                <div style="display: flex; gap: 15px;"><div class="post-stat">?? {{ post.likes }}</div><div class="post-stat">?? {{ post.comments }}</div></div>
                                 <span class="post-type">{{ post.media_type }}</span>
                             </div>
                         </div>
                     </a>
                     {% endfor %}
                 </div>
-                {% else %}
-                <div class="error-note">No posts found</div>
-                {% endif %}
+                {% else %}<div class="error-note">No posts found</div>{% endif %}
             </div>
         </div>
-
-        <!-- Queue & Activity -->
         <div class="grid">
             <div class="card">
-                <h2>📅 Queue Statistics</h2>
+                <h2>?? Queue Statistics</h2>
                 <div class="stat-row"><span class="stat-label">Photos Posted (24h)</span><span class="stat-value">{{ photos_24h }}</span></div>
                 <div class="stat-row"><span class="stat-label">Stories Posted (24h)</span><span class="stat-value">{{ stories_24h }}</span></div>
                 <div class="stat-row"><span class="stat-label">Total in Queue</span><span class="stat-value status-pending">{{ total_queued }}</span></div>
                 <div class="stat-row"><span class="stat-label">Posts This Week</span><span class="stat-value">{{ posts_week }}</span></div>
             </div>
             <div class="card">
-                <h2>⏳ Pending Replies</h2>
-                {% if pending_replies %}
-                    {% for reply in pending_replies %}
-                    <div class="activity-item">
-                        <div><strong>@{{ reply.username }}</strong>: "{{ reply.comment[:40] }}..."</div>
-                        <div class="reply-text">→ {{ reply.reply[:50] }}...</div>
-                        <div class="activity-time">Scheduled: {{ reply.scheduled }}</div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div style="color: #888; text-align: center; padding: 20px;">No pending replies</div>
-                {% endif %}
+                <h2>? Pending Replies</h2>
+                {% if pending_replies %}{% for reply in pending_replies %}
+                <div class="activity-item">
+                    <div><strong>@{{ reply.username }}</strong>: "{{ reply.comment[:40] }}..."</div>
+                    <div class="reply-text">? {{ reply.reply[:50] }}...</div>
+                    <div class="activity-time">Scheduled: {{ reply.scheduled }}</div>
+                </div>
+                {% endfor %}{% else %}<div style="color: #888; text-align: center; padding: 20px;">No pending replies</div>{% endif %}
             </div>
             <div class="card">
-                <h2>🕐 Recent Activity</h2>
-                {% if recent_activity %}
-                    {% for activity in recent_activity %}
-                    <div class="activity-item">
-                        <div><span class="{{ 'status-ok' if activity.status == 'posted' else 'status-error' }}">{{ activity.status|upper }}</span> - {{ activity.content_type }}</div>
-                        <div class="activity-time">{{ activity.time }}</div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div style="color: #888; text-align: center; padding: 20px;">No recent activity</div>
-                {% endif %}
+                <h2>?? Recent Activity</h2>
+                {% if recent_activity %}{% for activity in recent_activity %}
+                <div class="activity-item">
+                    <div><span class="{{ 'status-ok' if activity.status == 'posted' else 'status-error' }}">{{ activity.status|upper }}</span> - {{ activity.content_type }}</div>
+                    <div class="activity-time">{{ activity.time }}</div>
+                </div>
+                {% endfor %}{% else %}<div style="color: #888; text-align: center; padding: 20px;">No recent activity</div>{% endif %}
             </div>
         </div>
-
-        <!-- Comment History -->
         <div class="grid">
             <div class="card card-full">
-                <h2>💬 Comment History (Latest {{ comment_history|length }} of {{ total_comments }})</h2>
+                <h2>?? Comment History (Latest {{ comment_history|length }} of {{ total_comments }})</h2>
                 <div class="comment-stats">
                     <div class="comment-stat"><div class="comment-stat-num status-ok">{{ stats_sent }}</div><div class="comment-stat-label">Sent</div></div>
                     <div class="comment-stat"><div class="comment-stat-num status-pending">{{ stats_pending }}</div><div class="comment-stat-label">Pending</div></div>
@@ -278,119 +293,61 @@ DASHBOARD_HTML = """
                 <div class="comment-list">
                     {% for comment in comment_history %}
                     <div class="comment-item {{ comment.status }}">
-                        <div class="comment-header">
-                            <span class="comment-username">@{{ comment.username }}</span>
-                            <span class="comment-status {{ comment.status }}">{{ comment.status }}</span>
-                        </div>
+                        <div class="comment-header"><span class="comment-username">@{{ comment.username }}</span><span class="comment-status {{ comment.status }}">{{ comment.status }}</span></div>
                         <div class="comment-text">"{{ comment.text }}"</div>
-                        {% if comment.reply %}
-                        <div class="comment-reply">{{ comment.reply }}</div>
-                        {% endif %}
+                        {% if comment.reply %}<div class="comment-reply">{{ comment.reply }}</div>{% endif %}
                         <div class="comment-time">{{ comment.created }}{% if comment.replied_time %} | Replied: {{ comment.replied_time }}{% endif %}</div>
                     </div>
                     {% endfor %}
                 </div>
             </div>
         </div>
-
-        <p class="refresh-note">Auto-refreshes every 60 seconds • <a href="/api/stats" style="color: #e94560;">API</a></p>
+        <p class="refresh-note">Auto-refreshes every 60 seconds</p>
     </div>
 </body>
 </html>
 """
 
-
 def get_instagram_credentials():
     try:
         con = sqlite3.connect(DB_FILE)
-        row = con.execute(
-            "SELECT ig_user_id, access_token FROM credentials WHERE platform = 'Instagram' AND is_active = 1 LIMIT 1").fetchone()
+        row = con.execute("SELECT ig_user_id, access_token FROM credentials WHERE platform = 'Instagram' AND is_active = 1 LIMIT 1").fetchone()
         con.close()
-        if row:
-            return row[0], row[1]
+        return (row[0], row[1]) if row else (None, None)
     except:
-        pass
-    return None, None
-
+        return None, None
 
 def get_instagram_profile():
     ig_user_id, token = get_instagram_credentials()
-    if not ig_user_id or not token:
-        return None
+    if not ig_user_id: return None
     try:
-        resp = requests.get(f"{FB_GRAPH_API}/{ig_user_id}", params={
-            'fields': 'username,name,biography,followers_count,follows_count,media_count,profile_picture_url',
-            'access_token': token
-        }, timeout=10)
+        resp = requests.get(f"{FB_GRAPH_API}/{ig_user_id}", params={'fields': 'username,name,biography,followers_count,follows_count,media_count,profile_picture_url', 'access_token': token}, timeout=10)
         data = resp.json()
         if 'error' not in data:
-            return {
-                'username': data.get('username', 'N/A'),
-                'name': data.get('name', 'N/A'),
-                'bio': data.get('biography', ''),
-                'followers': data.get('followers_count', 0),
-                'following': data.get('follows_count', 0),
-                'posts': data.get('media_count', 0),
-                'avatar': data.get('profile_picture_url', '')
-            }
-    except Exception as e:
-        print(f"Error fetching profile: {e}")
+            return {'username': data.get('username', 'N/A'), 'name': data.get('name', 'N/A'), 'bio': data.get('biography', ''), 'followers': data.get('followers_count', 0), 'following': data.get('follows_count', 0), 'posts': data.get('media_count', 0), 'avatar': data.get('profile_picture_url', '')}
+    except: pass
     return None
-
 
 def get_instagram_posts(limit=8):
     ig_user_id, token = get_instagram_credentials()
-    if not ig_user_id or not token:
-        return []
+    if not ig_user_id: return []
     try:
-        resp = requests.get(f"{FB_GRAPH_API}/{ig_user_id}/media", params={
-            'fields': 'id,caption,media_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url',
-            'limit': limit,
-            'access_token': token
-        }, timeout=10)
+        resp = requests.get(f"{FB_GRAPH_API}/{ig_user_id}/media", params={'fields': 'id,caption,media_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url', 'limit': limit, 'access_token': token}, timeout=10)
         data = resp.json()
         posts = []
-        if 'data' in data:
-            for post in data['data']:
-                thumbnail = post.get('thumbnail_url') or post.get('media_url', '')
-                posts.append({
-                    'id': post.get('id'),
-                    'caption': (post.get('caption', '')[:50] + '...') if post.get('caption') else '',
-                    'media_type': post.get('media_type', 'IMAGE'),
-                    'timestamp': post.get('timestamp', ''),
-                    'likes': post.get('like_count', 0),
-                    'comments': post.get('comments_count', 0),
-                    'permalink': post.get('permalink', '#'),
-                    'thumbnail': thumbnail
-                })
+        for post in data.get('data', []):
+            posts.append({'id': post.get('id'), 'media_type': post.get('media_type', 'IMAGE'), 'likes': post.get('like_count', 0), 'comments': post.get('comments_count', 0), 'permalink': post.get('permalink', '#'), 'thumbnail': post.get('thumbnail_url') or post.get('media_url', '')})
         return posts
-    except Exception as e:
-        print(f"Error fetching posts: {e}")
-    return []
-
+    except: return []
 
 def calculate_engagement(posts, followers):
-    if not posts or followers == 0:
-        return None
-    total_likes = sum(p['likes'] for p in posts)
-    total_comments = sum(p['comments'] for p in posts)
+    if not posts or followers == 0: return None
+    total_likes, total_comments = sum(p['likes'] for p in posts), sum(p['comments'] for p in posts)
     post_count = len(posts)
-    avg_likes = total_likes / post_count if post_count > 0 else 0
-    avg_comments = total_comments / post_count if post_count > 0 else 0
-    engagement_rate = ((total_likes + total_comments) / post_count) / followers * 100 if post_count > 0 else 0
-    return {
-        'rate': round(engagement_rate, 2),
-        'avg_likes': round(avg_likes, 1),
-        'avg_comments': round(avg_comments, 1),
-        'total_likes': total_likes,
-        'total_comments': total_comments,
-        'post_count': post_count
-    }
-
+    return {'rate': round(((total_likes + total_comments) / post_count) / followers * 100, 2), 'avg_likes': round(total_likes / post_count, 1), 'avg_comments': round(total_comments / post_count, 1), 'total_likes': total_likes, 'total_comments': total_comments, 'post_count': post_count}
 
 def get_service_status():
-    services = [("Media Server", "media_server.py"), ("Cloudflare Tunnel", "cloudflared"), ("Scanner", "scanner.py"),
-                ("Poster", "poster.py"), ("Comment Responder", "comment_responder.py"), ("Dashboard", "dashboard.py")]
+    services = [("Media Server", "media_server.py"), ("Cloudflare Tunnel", "cloudflared"), ("Scanner", "scanner.py"), ("Poster", "poster.py"), ("Comment Responder", "comment_responder.py"), ("Dashboard", "dashboard.py")]
     result = []
     for name, search in services:
         try:
@@ -401,139 +358,101 @@ def get_service_status():
             result.append({"name": name, "running": False, "pid": None})
     return result
 
-
 def get_post_stats():
-    stats = {"posts_today": 0, "posts_pending": 0, "posts_failed": 0, "photos_24h": 0, "stories_24h": 0,
-             "total_queued": 0, "posts_week": 0}
+    stats = {"posts_today": 0, "posts_pending": 0, "posts_failed": 0, "photos_24h": 0, "stories_24h": 0, "total_queued": 0, "posts_week": 0}
     try:
         con = sqlite3.connect(DB_FILE)
         now = int(datetime.now().timestamp())
         day_ago, week_ago = now - 86400, now - 604800
         today_start = int(datetime.now().replace(hour=0, minute=0, second=0).timestamp())
-        stats["posts_today"] = \
-        con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ?",
-                    (today_start,)).fetchone()[0]
+        stats["posts_today"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ?", (today_start,)).fetchone()[0]
         stats["posts_pending"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'pending'").fetchone()[0]
         stats["posts_failed"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'failed'").fetchone()[0]
-        stats["photos_24h"] = con.execute(
-            "SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ? AND content_type = 'Photos'",
-            (day_ago,)).fetchone()[0]
-        stats["stories_24h"] = con.execute(
-            "SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ? AND content_type = 'Stories'",
-            (day_ago,)).fetchone()[0]
-        stats["total_queued"] = \
-        con.execute("SELECT COUNT(*) FROM media_files WHERE status IN ('pending', 'posting')").fetchone()[0]
-        stats["posts_week"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ?",
-                                          (week_ago,)).fetchone()[0]
+        stats["photos_24h"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ? AND content_type = 'Photos'", (day_ago,)).fetchone()[0]
+        stats["stories_24h"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ? AND content_type = 'Stories'", (day_ago,)).fetchone()[0]
+        stats["total_queued"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status IN ('pending', 'posting')").fetchone()[0]
+        stats["posts_week"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ?", (week_ago,)).fetchone()[0]
         con.close()
-    except Exception as e:
-        print(f"Error: {e}")
+    except: pass
     return stats
-
 
 def get_comment_stats():
     stats = {"comments_sent": 0, "comments_pending": 0, "comments_total": 0}
     try:
         con = sqlite3.connect(DB_FILE)
         stats["comments_sent"] = con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'sent'").fetchone()[0]
-        stats["comments_pending"] = \
-        con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'pending'").fetchone()[0]
+        stats["comments_pending"] = con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'pending'").fetchone()[0]
         stats["comments_total"] = con.execute("SELECT COUNT(*) FROM comment_replies").fetchone()[0]
         con.close()
-    except:
-        pass
+    except: pass
     return stats
 
-
 def get_pending_replies():
-    replies = []
     try:
         con = sqlite3.connect(DB_FILE)
-        rows = con.execute(
-            "SELECT username, comment_text, reply_text, scheduled_at FROM comment_replies WHERE status = 'pending' ORDER BY scheduled_at ASC LIMIT 5").fetchall()
-        for row in rows:
-            replies.append({"username": row[0], "comment": row[1] or "", "reply": row[2] or "Generating...",
-                            "scheduled": datetime.fromtimestamp(row[3]).strftime("%H:%M:%S") if row[3] else "N/A"})
+        rows = con.execute("SELECT username, comment_text, reply_text, scheduled_at FROM comment_replies WHERE status = 'pending' ORDER BY scheduled_at ASC LIMIT 5").fetchall()
         con.close()
-    except:
-        pass
-    return replies
-
+        return [{"username": r[0], "comment": r[1] or "", "reply": r[2] or "...", "scheduled": datetime.fromtimestamp(r[3]).strftime("%H:%M:%S") if r[3] else "N/A"} for r in rows]
+    except: return []
 
 def get_recent_activity():
-    activity = []
     try:
         con = sqlite3.connect(DB_FILE)
-        rows = con.execute(
-            "SELECT content_type, file_path, status, posted_at, created_at FROM media_files WHERE status IN ('posted', 'failed') ORDER BY COALESCE(posted_at, created_at) DESC LIMIT 10").fetchall()
-        for row in rows:
-            timestamp = row[3] or row[4]
-            activity.append({"content_type": row[0], "filename": os.path.basename(row[1]), "status": row[2],
-                             "time": datetime.fromtimestamp(timestamp).strftime(
-                                 "%Y-%m-%d %H:%M") if timestamp else "N/A"})
+        rows = con.execute("SELECT content_type, file_path, status, posted_at, created_at FROM media_files WHERE status IN ('posted', 'failed') ORDER BY COALESCE(posted_at, created_at) DESC LIMIT 10").fetchall()
         con.close()
-    except:
-        pass
-    return activity
-
+        return [{"content_type": r[0], "filename": os.path.basename(r[1]), "status": r[2], "time": datetime.fromtimestamp(r[3] or r[4]).strftime("%Y-%m-%d %H:%M") if (r[3] or r[4]) else "N/A"} for r in rows]
+    except: return []
 
 def get_comment_history(limit=30):
     history, total, stats = [], 0, {"sent": 0, "pending": 0, "skipped": 0, "failed": 0}
     try:
         con = sqlite3.connect(DB_FILE)
         total = con.execute("SELECT COUNT(*) FROM comment_replies").fetchone()[0]
-        rows = con.execute("SELECT status, COUNT(*) FROM comment_replies GROUP BY status").fetchall()
-        for row in rows:
-            if row[0] in stats:
-                stats[row[0]] = row[1]
-        rows = con.execute(
-            "SELECT username, comment_text, reply_text, status, created_at, replied_at FROM comment_replies ORDER BY created_at DESC LIMIT ?",
-            (limit,)).fetchall()
-        for row in rows:
-            created = datetime.fromtimestamp(row[4]).strftime("%Y-%m-%d %H:%M") if row[4] else "N/A"
-            replied = datetime.fromtimestamp(row[5]).strftime("%H:%M:%S") if row[5] else None
-            history.append(
-                {"username": row[0] or "unknown", "text": row[1] or "", "reply": row[2], "status": row[3] or "unknown",
-                 "created": created, "replied_time": replied})
+        for row in con.execute("SELECT status, COUNT(*) FROM comment_replies GROUP BY status").fetchall():
+            if row[0] in stats: stats[row[0]] = row[1]
+        for row in con.execute("SELECT username, comment_text, reply_text, status, created_at, replied_at FROM comment_replies ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall():
+            history.append({"username": row[0] or "unknown", "text": row[1] or "", "reply": row[2], "status": row[3] or "unknown", "created": datetime.fromtimestamp(row[4]).strftime("%Y-%m-%d %H:%M") if row[4] else "N/A", "replied_time": datetime.fromtimestamp(row[5]).strftime("%H:%M:%S") if row[5] else None})
         con.close()
-    except Exception as e:
-        print(f"Error getting comment history: {e}")
+    except: pass
     return history, total, stats
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    global AUTH_TOKEN
+    error = None
+    if request.method == "POST":
+        if request.form.get("password") == DASHBOARD_PASSWORD:
+            AUTH_TOKEN = generate_auth_token()
+            resp = make_response(redirect(url_for("dashboard")))
+            max_age = COOKIE_MAX_AGE if request.form.get("remember") else None
+            resp.set_cookie(COOKIE_NAME, AUTH_TOKEN, max_age=max_age, httponly=True, samesite='Lax')
+            return resp
+        error = "Invalid password"
+    return render_template_string(LOGIN_HTML, error=error)
+
+@app.route("/logout")
+def logout():
+    resp = make_response(redirect(url_for("login")))
+    resp.delete_cookie(COOKIE_NAME)
+    return resp
 
 @app.route("/")
+@requires_auth
 def dashboard():
     profile = get_instagram_profile()
     ig_posts = get_instagram_posts(8)
     engagement = calculate_engagement(ig_posts, profile['followers'] if profile else 0)
-    services = get_service_status()
-    post_stats = get_post_stats()
-    comment_stats = get_comment_stats()
     comment_history, total_comments, history_stats = get_comment_history(30)
-    return render_template_string(DASHBOARD_HTML,
-                                  current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                  profile=profile, ig_posts=ig_posts, engagement=engagement, services=services,
-                                  posts_today=post_stats["posts_today"], posts_pending=post_stats["posts_pending"],
-                                  posts_failed=post_stats["posts_failed"], photos_24h=post_stats["photos_24h"],
-                                  stories_24h=post_stats["stories_24h"], total_queued=post_stats["total_queued"],
-                                  posts_week=post_stats["posts_week"], comments_sent=comment_stats["comments_sent"],
-                                  comments_pending=comment_stats["comments_pending"],
-                                  comments_total=comment_stats["comments_total"],
-                                  pending_replies=get_pending_replies(), recent_activity=get_recent_activity(),
-                                  comment_history=comment_history, total_comments=total_comments,
-                                  stats_sent=history_stats["sent"], stats_pending=history_stats["pending"],
-                                  stats_skipped=history_stats["skipped"], stats_failed=history_stats["failed"])
-
+    post_stats, comment_stats = get_post_stats(), get_comment_stats()
+    return render_template_string(DASHBOARD_HTML, current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), profile=profile, ig_posts=ig_posts, engagement=engagement, services=get_service_status(), posts_today=post_stats["posts_today"], posts_pending=post_stats["posts_pending"], posts_failed=post_stats["posts_failed"], photos_24h=post_stats["photos_24h"], stories_24h=post_stats["stories_24h"], total_queued=post_stats["total_queued"], posts_week=post_stats["posts_week"], comments_sent=comment_stats["comments_sent"], comments_pending=comment_stats["comments_pending"], comments_total=comment_stats["comments_total"], pending_replies=get_pending_replies(), recent_activity=get_recent_activity(), comment_history=comment_history, total_comments=total_comments, stats_sent=history_stats["sent"], stats_pending=history_stats["pending"], stats_skipped=history_stats["skipped"], stats_failed=history_stats["failed"])
 
 @app.route("/api/stats")
+@requires_auth
 def api_stats():
     profile = get_instagram_profile()
     ig_posts = get_instagram_posts(8)
-    engagement = calculate_engagement(ig_posts, profile['followers'] if profile else 0)
-    return {'profile': profile, 'engagement': engagement, 'posts': get_post_stats(), 'comments': get_comment_stats(),
-            'timestamp': datetime.now().isoformat()}
-
+    return {'profile': profile, 'engagement': calculate_engagement(ig_posts, profile['followers'] if profile else 0), 'posts': get_post_stats(), 'comments': get_comment_stats()}
 
 if __name__ == "__main__":
-    print("Starting enhanced dashboard on http://0.0.0.0:5000")
+    print("Dashboard with auth on http://0.0.0.0:5000")
     app.run(host="0.0.0.0", port=5000, debug=False)
