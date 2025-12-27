@@ -3,8 +3,10 @@
 """
 Comment Responder Daemon for BB-Poster-Automation.
 
-Polls Instagram for new comments, generates replies using OpenAI,
-and posts them with a random delay to appear human-like.
+Polls Instagram for new comments AND replies to comments,
+generates replies using OpenAI, and posts them with a random delay.
+
+Supports conversation threads with max 3 replies per user per post.
 """
 
 import os
@@ -20,7 +22,6 @@ from datetime import datetime, timedelta
 from threading import Thread
 from queue import Queue
 
-# Add project root to path
 PROJECT_ROOT = os.path.expanduser("~/BB-Poster-Automation")
 sys.path.insert(0, PROJECT_ROOT)
 
@@ -42,15 +43,11 @@ def load_env():
 load_env()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
-# Polling interval (seconds)
-POLL_INTERVAL = 180  # 10 minutes
-
-# Reply delay range (seconds)
+POLL_INTERVAL = 180  # 3 minutes
 MIN_REPLY_DELAY = 900   # 15 minutes
 MAX_REPLY_DELAY = 2700  # 45 minutes
-
-# Rate limiting
-MAX_REPLIES_PER_HOUR = 8  # Stay within 5-10 range
+MAX_REPLIES_PER_HOUR = 8
+MAX_REPLIES_PER_USER_PER_POST = 3  # Max conversation depth per user
 
 # -----------------------------------------------------------------------------
 # Nyssa's Personality Prompt
@@ -60,7 +57,6 @@ NYSSA_SYSTEM_PROMPT = """You are Nyssa Rose Bloom, a 27-year-old fitness and lif
 
 BACKGROUND:
 - Originally from New York, now living in Miami
-- Moved to Miami for the weather and beach lifestyle
 - Fitness enthusiast - believes in "strong not skinny"
 - Works out daily, loves the gym, yoga, and outdoor activities
 
@@ -68,17 +64,15 @@ PERSONALITY:
 - Warm, friendly, approachable
 - Confident but not arrogant
 - Self-deprecating humor
-- Fiercely independent
 - Supportive and encouraging to everyone
 
 SPEAKING STYLE:
 - Casual but articulate (NYC roots)
-- Uses "babe" or "hun" (gender-neutral, common in influencer speak)
-- NEVER use "girl", "queen", "sis" or gendered terms - you don't know who's commenting
+- Uses "babe" or "hun" (gender-neutral)
+- NEVER use "girl", "queen", "sis" or gendered terms
 - Says things are "unreal", "obsessed", "iconic", "insane"
-- Keeps replies SHORT - 1-2 sentences max for Instagram comments
-- Uses 1-2 emojis max, not excessive
-- Never preachy or try-hard
+- Keeps replies SHORT - 1-2 sentences max
+- Uses 1-2 emojis max
 - Authentic and real
 
 RULES FOR INSTAGRAM COMMENT REPLIES:
@@ -87,13 +81,16 @@ RULES FOR INSTAGRAM COMMENT REPLIES:
 - Answer questions directly
 - Sound like a real person, not a brand
 - Match the energy of the commenter
-- Use emojis sparingly (1-2 max)
-- NEVER assume gender - avoid "girl", "queen", "king", "bro", "sis" etc."""
+- NEVER assume gender"""
 
 EMOJI_ONLY_INSTRUCTION = """The comment is emoji-only (no words). 
 Reply with ONLY a single emoji or ultra-short acknowledgment (1-3 words max).
-Examples: "??", "??", "thanks babe!", "love u! ??", "??"
+Examples: "heart", "fire", "thanks babe!", "love u!"
 Do NOT write a full sentence."""
+
+CONVERSATION_CONTEXT_INSTRUCTION = """This is a follow-up reply in an ongoing conversation. 
+The person is replying to your previous comment. Keep the conversation natural and friendly.
+Remember: keep it SHORT (1-2 sentences max)."""
 
 # -----------------------------------------------------------------------------
 # Database Setup
@@ -113,11 +110,25 @@ def init_comment_db():
             scheduled_at INTEGER,
             replied_at INTEGER,
             status TEXT DEFAULT 'pending',
+            parent_comment_id TEXT,
+            nyssa_comment_id TEXT,
             created_at INTEGER DEFAULT (strftime('%s', 'now'))
         )
     """)
     con.execute("CREATE INDEX IF NOT EXISTS idx_comment_id ON comment_replies(comment_id)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_status ON comment_replies(status)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_media_username ON comment_replies(media_id, username)")
+    
+    # Add new columns if they don't exist (migration)
+    try:
+        con.execute("ALTER TABLE comment_replies ADD COLUMN parent_comment_id TEXT")
+    except:
+        pass
+    try:
+        con.execute("ALTER TABLE comment_replies ADD COLUMN nyssa_comment_id TEXT")
+    except:
+        pass
+    
     con.commit()
     con.close()
 
@@ -128,14 +139,34 @@ def get_replied_comment_ids():
     con.close()
     return {row[0] for row in rows}
 
-def add_pending_reply(comment_id, media_id, username, comment_text, reply_text, scheduled_at):
+def get_reply_count_for_user_on_post(media_id, username):
+    """Count how many times we've replied to this user on this post."""
+    con = sqlite3.connect(DB_FILE)
+    count = con.execute("""
+        SELECT COUNT(*) FROM comment_replies 
+        WHERE media_id = ? AND username = ? AND status = 'sent'
+    """, (media_id, username)).fetchone()[0]
+    con.close()
+    return count
+
+def get_nyssa_comment_ids():
+    """Get IDs of comments Nyssa has posted (for scanning replies)."""
+    con = sqlite3.connect(DB_FILE)
+    rows = con.execute("""
+        SELECT nyssa_comment_id FROM comment_replies 
+        WHERE status = 'sent' AND nyssa_comment_id IS NOT NULL
+    """).fetchall()
+    con.close()
+    return {row[0] for row in rows if row[0]}
+
+def add_pending_reply(comment_id, media_id, username, comment_text, reply_text, scheduled_at, parent_comment_id=None):
     """Add a reply to the queue."""
     con = sqlite3.connect(DB_FILE)
     con.execute("""
         INSERT OR IGNORE INTO comment_replies 
-        (comment_id, media_id, username, comment_text, reply_text, scheduled_at, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending')
-    """, (comment_id, media_id, username, comment_text, reply_text, scheduled_at))
+        (comment_id, media_id, username, comment_text, reply_text, scheduled_at, status, parent_comment_id)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+    """, (comment_id, media_id, username, comment_text, reply_text, scheduled_at, parent_comment_id))
     con.commit()
     con.close()
 
@@ -152,14 +183,14 @@ def get_pending_replies():
     con.close()
     return rows
 
-def mark_reply_sent(reply_id):
-    """Mark a reply as sent."""
+def mark_reply_sent(reply_id, nyssa_comment_id=None):
+    """Mark a reply as sent and store Nyssa's comment ID."""
     con = sqlite3.connect(DB_FILE)
     con.execute("""
         UPDATE comment_replies 
-        SET status = 'sent', replied_at = strftime('%s', 'now')
+        SET status = 'sent', replied_at = strftime('%s', 'now'), nyssa_comment_id = ?
         WHERE id = ?
-    """, (reply_id,))
+    """, (nyssa_comment_id, reply_id))
     con.commit()
     con.close()
 
@@ -224,6 +255,16 @@ def get_comments(media_id, access_token):
     response = requests.get(url, params=params)
     return response.json()
 
+def get_comment_replies(comment_id, access_token):
+    """Get replies to a specific comment."""
+    url = f"{FB_GRAPH_API}/{comment_id}/replies"
+    params = {
+        "fields": "id,text,timestamp,username",
+        "access_token": access_token
+    }
+    response = requests.get(url, params=params)
+    return response.json()
+
 def post_reply(comment_id, message, access_token):
     """Post a reply to a comment."""
     url = f"{FB_GRAPH_API}/{comment_id}/replies"
@@ -234,48 +275,32 @@ def post_reply(comment_id, message, access_token):
     response = requests.post(url, params=params)
     return response.json()
 
-def get_media_caption(media_id, access_token):
-    """Get the caption for a specific media post."""
-    url = f"{FB_GRAPH_API}/{media_id}"
-    params = {
-        "fields": "caption",
-        "access_token": access_token
-    }
-    response = requests.get(url, params=params)
-    data = response.json()
-    return data.get("caption", "")
-
 # -----------------------------------------------------------------------------
 # OpenAI Functions
 # -----------------------------------------------------------------------------
 
 def is_emoji_only(text):
     """Check if comment contains only emojis and whitespace."""
-    # Remove all emojis and whitespace, check if anything remains
-    # This regex matches most emojis
     emoji_pattern = re.compile(
         "["
-        "\U0001F600-\U0001F64F"  # emoticons
-        "\U0001F300-\U0001F5FF"  # symbols & pictographs
-        "\U0001F680-\U0001F6FF"  # transport & map symbols
-        "\U0001F1E0-\U0001F1FF"  # flags
-        "\U00002702-\U000027B0"  # dingbats
-        "\U000024C2-\U0001F251"  # misc
-        "\U0001F900-\U0001F9FF"  # supplemental symbols
-        "\U0001FA00-\U0001FA6F"  # chess symbols
-        "\U0001FA70-\U0001FAFF"  # symbols ext-A
-        "\U00002600-\U000026FF"  # misc symbols
-        "\U00002700-\U000027BF"  # dingbats
+        "\U0001F600-\U0001F64F"
+        "\U0001F300-\U0001F5FF"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF"
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "\U0001F900-\U0001F9FF"
+        "\U0001FA00-\U0001FA6F"
+        "\U0001FA70-\U0001FAFF"
+        "\U00002600-\U000026FF"
+        "\U00002700-\U000027BF"
         "]+", 
         flags=re.UNICODE
     )
-    # Remove emojis and whitespace
     text_without_emoji = emoji_pattern.sub("", text)
-    text_clean = text_without_emoji.strip()
-    # If nothing left, it's emoji-only
-    return len(text_clean) == 0
+    return len(text_without_emoji.strip()) == 0
 
-def generate_reply(comment_text, post_caption=""):
+def generate_reply(comment_text, post_caption="", is_reply_to_reply=False, previous_context=""):
     """Generate a reply using OpenAI."""
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
@@ -283,11 +308,15 @@ def generate_reply(comment_text, post_caption=""):
         "Content-Type": "application/json"
     }
     
-    # Build the user message
     emoji_only = is_emoji_only(comment_text)
     
     if emoji_only:
-        user_message = f"Someone left this emoji comment on your post: \"{comment_text}\"\n\n{EMOJI_ONLY_INSTRUCTION}"
+        user_message = f"Someone left this emoji comment: \"{comment_text}\"\n\n{EMOJI_ONLY_INSTRUCTION}"
+    elif is_reply_to_reply:
+        user_message = f"You're continuing a conversation on Instagram.\n"
+        if previous_context:
+            user_message += f"Previous exchange: {previous_context}\n\n"
+        user_message += f"They replied: \"{comment_text}\"\n\n{CONVERSATION_CONTEXT_INSTRUCTION}\n\nWrite a short reply as Nyssa."
     else:
         user_message = f"Someone commented on your Instagram post"
         if post_caption:
@@ -317,7 +346,7 @@ def generate_reply(comment_text, post_caption=""):
 # -----------------------------------------------------------------------------
 
 def scan_for_new_comments(log):
-    """Scan all recent posts for new comments."""
+    """Scan for new comments AND replies to Nyssa's comments."""
     try:
         ig_user_id, access_token = get_credentials()
     except Exception as e:
@@ -325,6 +354,7 @@ def scan_for_new_comments(log):
         return []
     
     replied_ids = get_replied_comment_ids()
+    nyssa_comment_ids = get_nyssa_comment_ids()
     new_comments = []
     
     # Get recent media
@@ -340,7 +370,6 @@ def scan_for_new_comments(log):
         if comment_count == 0:
             continue
         
-        # Get comments for this post
         comments_response = get_comments(media_id, access_token)
         if "data" not in comments_response:
             continue
@@ -350,17 +379,77 @@ def scan_for_new_comments(log):
         for comment in comments_response["data"]:
             comment_id = comment["id"]
             
-            # Skip if already processed
-            if comment_id in replied_ids:
+            if comment_id not in replied_ids:
+                new_comments.append({
+                    "comment_id": comment_id,
+                    "media_id": media_id,
+                    "username": comment.get("username", "unknown"),
+                    "text": comment.get("text", ""),
+                    "caption": post_caption,
+                    "is_reply_to_reply": False,
+                    "parent_comment_id": None
+                })
+    
+    # Scan replies to Nyssa's comments
+    for nyssa_comment_id in nyssa_comment_ids:
+        try:
+            replies_response = get_comment_replies(nyssa_comment_id, access_token)
+            if "data" not in replies_response:
                 continue
             
-            new_comments.append({
-                "comment_id": comment_id,
-                "media_id": media_id,
-                "username": comment.get("username", "unknown"),
-                "text": comment.get("text", ""),
-                "caption": post_caption
-            })
+            for reply in replies_response["data"]:
+                reply_id = reply["id"]
+                username = reply.get("username", "unknown")
+                
+                if reply_id in replied_ids:
+                    continue
+                
+                # Get media_id for this thread
+                con = sqlite3.connect(DB_FILE)
+                row = con.execute("""
+                    SELECT media_id, comment_text, reply_text 
+                    FROM comment_replies 
+                    WHERE nyssa_comment_id = ?
+                """, (nyssa_comment_id,)).fetchone()
+                con.close()
+                
+                if not row:
+                    continue
+                
+                media_id = row[0]
+                original_comment = row[1]
+                nyssa_reply = row[2]
+                
+                # Check conversation limit
+                reply_count = get_reply_count_for_user_on_post(media_id, username)
+                if reply_count >= MAX_REPLIES_PER_USER_PER_POST:
+                    log.debug(f"Max replies reached for @{username} ({reply_count}/{MAX_REPLIES_PER_USER_PER_POST})")
+                    con = sqlite3.connect(DB_FILE)
+                    con.execute("""
+                        INSERT OR IGNORE INTO comment_replies 
+                        (comment_id, media_id, username, comment_text, reply_text, status, parent_comment_id)
+                        VALUES (?, ?, ?, ?, ?, 'skipped', ?)
+                    """, (reply_id, media_id, username, reply.get("text", ""), "Max conversation limit reached", nyssa_comment_id))
+                    con.commit()
+                    con.close()
+                    continue
+                
+                previous_context = f"They said: \"{original_comment[:50]}\" -> You replied: \"{nyssa_reply[:50]}\""
+                
+                new_comments.append({
+                    "comment_id": reply_id,
+                    "media_id": media_id,
+                    "username": username,
+                    "text": reply.get("text", ""),
+                    "caption": "",
+                    "is_reply_to_reply": True,
+                    "parent_comment_id": nyssa_comment_id,
+                    "previous_context": previous_context
+                })
+                
+        except Exception as e:
+            log.debug(f"Error scanning replies to {nyssa_comment_id}: {e}")
+            continue
     
     return new_comments
 
@@ -368,36 +457,38 @@ def process_new_comments(comments, log):
     """Generate replies for new comments and schedule them."""
     for comment in comments:
         try:
-            # Generate reply using OpenAI
-            reply_text = generate_reply(comment["text"], comment["caption"])
+            reply_text = generate_reply(
+                comment["text"], 
+                comment.get("caption", ""),
+                comment.get("is_reply_to_reply", False),
+                comment.get("previous_context", "")
+            )
             
-            # Calculate random delay
             delay = random.randint(MIN_REPLY_DELAY, MAX_REPLY_DELAY)
             scheduled_at = int(time.time()) + delay
             scheduled_time = datetime.fromtimestamp(scheduled_at).strftime("%H:%M:%S")
             
-            # Add to queue
             add_pending_reply(
                 comment["comment_id"],
                 comment["media_id"],
                 comment["username"],
                 comment["text"],
                 reply_text,
-                scheduled_at
+                scheduled_at,
+                comment.get("parent_comment_id")
             )
             
-            log.info(f"Queued reply to @{comment['username']}: \"{comment['text'][:30]}...\" -> scheduled for {scheduled_time}")
-            log.debug(f"  Reply: {reply_text}")
+            reply_type = "[THREAD]" if comment.get("is_reply_to_reply") else "[NEW]"
+            log.info(f"Queued {reply_type} to @{comment['username']}: \"{comment['text'][:30]}...\" -> {scheduled_time}")
             
         except Exception as e:
             log.error(f"Failed to process comment {comment['comment_id']}: {e}")
 
 def send_pending_replies(log):
     """Send replies that are due."""
-    # Check rate limit
     replies_last_hour = get_replies_last_hour()
     if replies_last_hour >= MAX_REPLIES_PER_HOUR:
-        log.debug(f"Rate limit reached ({replies_last_hour}/{MAX_REPLIES_PER_HOUR} replies this hour)")
+        log.debug(f"Rate limit reached ({replies_last_hour}/{MAX_REPLIES_PER_HOUR})")
         return
     
     remaining_quota = MAX_REPLIES_PER_HOUR - replies_last_hour
@@ -412,14 +503,15 @@ def send_pending_replies(log):
         log.error(f"Failed to get credentials: {e}")
         return
     
-    for reply in pending[:remaining_quota]:  # Respect rate limit
+    for reply in pending[:remaining_quota]:
         reply_id, comment_id, media_id, reply_text = reply
         
         try:
             result = post_reply(comment_id, reply_text, access_token)
             
             if "id" in result:
-                mark_reply_sent(reply_id)
+                nyssa_comment_id = result["id"]
+                mark_reply_sent(reply_id, nyssa_comment_id)
                 log.info(f"Sent reply to comment {comment_id}: {reply_text[:50]}...")
             else:
                 error_msg = result.get("error", {}).get("message", str(result))
@@ -430,46 +522,39 @@ def send_pending_replies(log):
             mark_reply_failed(reply_id, str(e))
             log.error(f"Exception sending reply: {e}")
         
-        # Small delay between replies
         time.sleep(2)
 
 def run_daemon(log):
     """Main daemon loop."""
     log.info("Comment Responder daemon started")
     log.info(f"Poll interval: {POLL_INTERVAL}s, Reply delay: {MIN_REPLY_DELAY}-{MAX_REPLY_DELAY}s")
+    log.info(f"Max replies per user per post: {MAX_REPLIES_PER_USER_PER_POST}")
     
     while True:
         try:
-            # Scan for new comments
             log.info("Polling for comments...")
             new_comments = scan_for_new_comments(log)
             log.info(f"Found {len(new_comments)} new comment(s)")
             if new_comments:
                 process_new_comments(new_comments, log)
             
-            # Send pending replies
             send_pending_replies(log)
             
         except Exception as e:
             log.error(f"Error in main loop: {e}")
         
-        # Wait for next poll
         time.sleep(POLL_INTERVAL)
 
 def run_once(log):
     """Run a single scan and process cycle."""
     log.info("Running single scan...")
-    
-    # Scan for new comments
     new_comments = scan_for_new_comments(log)
     log.info(f"Found {len(new_comments)} new comment(s)")
     
     if new_comments:
         process_new_comments(new_comments, log)
     
-    # Send pending replies
     send_pending_replies(log)
-    
     log.info("Single scan complete")
 
 def show_stats():
@@ -477,48 +562,40 @@ def show_stats():
     con = sqlite3.connect(DB_FILE)
     
     stats = {}
-    
-    # Count by status
-    rows = con.execute("""
-        SELECT status, COUNT(*) FROM comment_replies GROUP BY status
-    """).fetchall()
+    rows = con.execute("SELECT status, COUNT(*) FROM comment_replies GROUP BY status").fetchall()
     stats["by_status"] = {row[0]: row[1] for row in rows}
     
-    # Replies in last 24h
     day_ago = int(time.time()) - 86400
-    stats["replied_24h"] = con.execute("""
-        SELECT COUNT(*) FROM comment_replies WHERE status = 'sent' AND replied_at >= ?
-    """, (day_ago,)).fetchone()[0]
+    stats["replied_24h"] = con.execute(
+        "SELECT COUNT(*) FROM comment_replies WHERE status = 'sent' AND replied_at >= ?", (day_ago,)
+    ).fetchone()[0]
     
-    # Replies in last hour
     hour_ago = int(time.time()) - 3600
-    stats["replied_1h"] = con.execute("""
-        SELECT COUNT(*) FROM comment_replies WHERE status = 'sent' AND replied_at >= ?
-    """, (hour_ago,)).fetchone()[0]
+    stats["replied_1h"] = con.execute(
+        "SELECT COUNT(*) FROM comment_replies WHERE status = 'sent' AND replied_at >= ?", (hour_ago,)
+    ).fetchone()[0]
     
-    # Pending replies
-    pending = con.execute("""
-        SELECT username, comment_text, reply_text, scheduled_at 
-        FROM comment_replies 
-        WHERE status = 'pending'
-        ORDER BY scheduled_at ASC
-        LIMIT 5
-    """).fetchall()
+    stats["thread_replies"] = con.execute(
+        "SELECT COUNT(*) FROM comment_replies WHERE parent_comment_id IS NOT NULL"
+    ).fetchone()[0]
     
     con.close()
-    
     print(json.dumps(stats, indent=2))
+    
+    con = sqlite3.connect(DB_FILE)
+    pending = con.execute("""
+        SELECT username, comment_text, reply_text, scheduled_at, parent_comment_id
+        FROM comment_replies WHERE status = 'pending' ORDER BY scheduled_at ASC
+    """).fetchall()
+    con.close()
     
     if pending:
         print("\nPending replies:")
         for row in pending:
-            username, comment, reply, scheduled = row
+            username, comment, reply, scheduled, parent = row
             sched_time = datetime.fromtimestamp(scheduled).strftime("%H:%M:%S")
-            print(f"  @{username}: \"{comment[:30]}...\" -> \"{reply[:30]}...\" at {sched_time}")
-
-# -----------------------------------------------------------------------------
-# Entry Point
-# -----------------------------------------------------------------------------
+            reply_type = "[THREAD]" if parent else "[NEW]"
+            print(f"  {reply_type} @{username}: \"{comment[:30]}...\" -> \"{reply[:30]}...\" at {sched_time}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Comment Responder Daemon")
@@ -527,7 +604,6 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
     
-    # Initialize database
     init_comment_db()
     
     if args.stats:

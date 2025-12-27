@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import os, sys, json, sqlite3, subprocess
 from datetime import datetime
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, request
 
 PROJECT_ROOT = os.path.expanduser("~/BB-Poster-Automation")
 DB_FILE = os.path.join(PROJECT_ROOT, "poster.sqlite3")
@@ -19,12 +19,13 @@ DASHBOARD_HTML = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }
-        .container { max-width: 1200px; margin: 0 auto; }
+        .container { max-width: 1400px; margin: 0 auto; }
         h1 { text-align: center; margin-bottom: 30px; font-size: 2rem; color: #e94560; }
         .subtitle { text-align: center; color: #888; margin-top: -20px; margin-bottom: 30px; font-size: 0.9rem; }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px; }
         .card { background: rgba(255,255,255,0.05); border-radius: 15px; padding: 20px; border: 1px solid rgba(255,255,255,0.1); }
         .card h2 { font-size: 1rem; color: #e94560; margin-bottom: 15px; }
+        .card-full { grid-column: 1 / -1; }
         .stat-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .stat-row:last-child { border-bottom: none; }
         .stat-label { color: #888; }
@@ -32,6 +33,7 @@ DASHBOARD_HTML = """
         .status-ok { color: #4ade80; }
         .status-error { color: #f87171; }
         .status-pending { color: #60a5fa; }
+        .status-skipped { color: #fbbf24; }
         .big-number { font-size: 2.5rem; font-weight: bold; color: #e94560; }
         .big-label { color: #888; font-size: 0.85rem; }
         .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; text-align: center; }
@@ -43,6 +45,31 @@ DASHBOARD_HTML = """
         .service-dot.running { background: #4ade80; }
         .service-dot.stopped { background: #f87171; }
         .refresh-note { text-align: center; color: #666; font-size: 0.8rem; margin-top: 20px; }
+        
+        /* Comment History Styles */
+        .comment-list { max-height: 600px; overflow-y: auto; }
+        .comment-item { padding: 15px; background: rgba(255,255,255,0.03); border-radius: 10px; margin-bottom: 10px; border-left: 3px solid #e94560; }
+        .comment-item.sent { border-left-color: #4ade80; }
+        .comment-item.pending { border-left-color: #60a5fa; }
+        .comment-item.skipped { border-left-color: #fbbf24; }
+        .comment-item.failed { border-left-color: #f87171; }
+        .comment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .comment-username { font-weight: bold; color: #e94560; }
+        .comment-status { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; }
+        .comment-status.sent { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+        .comment-status.pending { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
+        .comment-status.skipped { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+        .comment-status.failed { background: rgba(248, 113, 113, 0.2); color: #f87171; }
+        .comment-text { color: #ccc; margin-bottom: 8px; }
+        .comment-reply { color: #4ade80; font-style: italic; padding-left: 15px; border-left: 2px solid #4ade80; margin-top: 8px; }
+        .comment-time { color: #666; font-size: 0.75rem; margin-top: 8px; }
+        .comment-stats { display: flex; gap: 20px; margin-bottom: 15px; padding: 10px; background: rgba(255,255,255,0.02); border-radius: 8px; }
+        .comment-stat { text-align: center; }
+        .comment-stat-num { font-size: 1.5rem; font-weight: bold; color: #e94560; }
+        .comment-stat-label { font-size: 0.75rem; color: #888; }
+        .load-more { text-align: center; margin-top: 15px; }
+        .load-more a { color: #e94560; text-decoration: none; padding: 10px 20px; border: 1px solid #e94560; border-radius: 5px; }
+        .load-more a:hover { background: #e94560; color: #fff; }
     </style>
 </head>
 <body>
@@ -71,7 +98,7 @@ DASHBOARD_HTML = """
             <div class="card">
                 <h2>Comment Responder</h2>
                 <div class="stat-grid">
-                    <div><div class="big-number status-ok">{{ comments_sent }}</div><div class="big-label">Replied (24h)</div></div>
+                    <div><div class="big-number status-ok">{{ comments_sent }}</div><div class="big-label">Sent (All Time)</div></div>
                     <div><div class="big-number status-pending">{{ comments_pending }}</div><div class="big-label">Pending</div></div>
                     <div><div class="big-number">{{ comments_total }}</div><div class="big-label">Total</div></div>
                 </div>
@@ -113,6 +140,54 @@ DASHBOARD_HTML = """
                 {% endif %}
             </div>
         </div>
+        
+        <!-- Comment History Section -->
+        <div class="grid">
+            <div class="card card-full">
+                <h2>Comment History (Latest {{ comment_history|length }} of {{ total_comments }})</h2>
+                <div class="comment-stats">
+                    <div class="comment-stat">
+                        <div class="comment-stat-num status-ok">{{ stats_sent }}</div>
+                        <div class="comment-stat-label">Sent</div>
+                    </div>
+                    <div class="comment-stat">
+                        <div class="comment-stat-num status-pending">{{ stats_pending }}</div>
+                        <div class="comment-stat-label">Pending</div>
+                    </div>
+                    <div class="comment-stat">
+                        <div class="comment-stat-num status-skipped">{{ stats_skipped }}</div>
+                        <div class="comment-stat-label">Skipped</div>
+                    </div>
+                    <div class="comment-stat">
+                        <div class="comment-stat-num status-error">{{ stats_failed }}</div>
+                        <div class="comment-stat-label">Failed</div>
+                    </div>
+                </div>
+                <div class="comment-list">
+                    {% if comment_history %}
+                        {% for comment in comment_history %}
+                        <div class="comment-item {{ comment.status }}">
+                            <div class="comment-header">
+                                <span class="comment-username">@{{ comment.username }}</span>
+                                <span class="comment-status {{ comment.status }}">{{ comment.status }}</span>
+                            </div>
+                            <div class="comment-text">"{{ comment.text }}"</div>
+                            {% if comment.reply %}
+                            <div class="comment-reply">{{ comment.reply }}</div>
+                            {% endif %}
+                            <div class="comment-time">
+                                {{ comment.created }} 
+                                {% if comment.replied_time %} | Replied: {{ comment.replied_time }}{% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div style="color: #888; text-align: center; padding: 40px;">No comments yet</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
         <p class="refresh-note">Auto-refreshes every 60 seconds</p>
     </div>
 </body>
@@ -154,8 +229,7 @@ def get_comment_stats():
     stats = {"comments_sent": 0, "comments_pending": 0, "comments_total": 0}
     try:
         con = sqlite3.connect(DB_FILE)
-        day_ago = int(datetime.now().timestamp()) - 86400
-        stats["comments_sent"] = con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'sent' AND replied_at >= ?", (day_ago,)).fetchone()[0]
+        stats["comments_sent"] = con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'sent'").fetchone()[0]
         stats["comments_pending"] = con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'pending'").fetchone()[0]
         stats["comments_total"] = con.execute("SELECT COUNT(*) FROM comment_replies").fetchone()[0]
         con.close()
@@ -188,17 +262,76 @@ def get_recent_activity():
         pass
     return activity
 
+def get_comment_history(limit=50):
+    """Get comment history with replies."""
+    history = []
+    total = 0
+    stats = {"sent": 0, "pending": 0, "skipped": 0, "failed": 0}
+    try:
+        con = sqlite3.connect(DB_FILE)
+        
+        # Get total count
+        total = con.execute("SELECT COUNT(*) FROM comment_replies").fetchone()[0]
+        
+        # Get stats by status
+        rows = con.execute("SELECT status, COUNT(*) FROM comment_replies GROUP BY status").fetchall()
+        for row in rows:
+            if row[0] in stats:
+                stats[row[0]] = row[1]
+        
+        # Get latest comments
+        rows = con.execute("""
+            SELECT username, comment_text, reply_text, status, created_at, replied_at 
+            FROM comment_replies 
+            ORDER BY created_at DESC 
+            LIMIT ?
+        """, (limit,)).fetchall()
+        
+        for row in rows:
+            created = datetime.fromtimestamp(row[4]).strftime("%Y-%m-%d %H:%M") if row[4] else "N/A"
+            replied = datetime.fromtimestamp(row[5]).strftime("%H:%M:%S") if row[5] else None
+            history.append({
+                "username": row[0],
+                "text": row[1],
+                "reply": row[2],
+                "status": row[3],
+                "created": created,
+                "replied_time": replied
+            })
+        con.close()
+    except Exception as e:
+        print(f"Error getting comment history: {e}")
+    return history, total, stats
+
 @app.route("/")
 def dashboard():
     services = get_service_status()
     post_stats = get_post_stats()
     comment_stats = get_comment_stats()
-    return render_template_string(DASHBOARD_HTML, current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        services=services, posts_today=post_stats["posts_today"], posts_pending=post_stats["posts_pending"],
-        posts_failed=post_stats["posts_failed"], photos_24h=post_stats["photos_24h"], stories_24h=post_stats["stories_24h"],
-        total_queued=post_stats["total_queued"], posts_week=post_stats["posts_week"], comments_sent=comment_stats["comments_sent"],
-        comments_pending=comment_stats["comments_pending"], comments_total=comment_stats["comments_total"],
-        pending_replies=get_pending_replies(), recent_activity=get_recent_activity())
+    comment_history, total_comments, history_stats = get_comment_history(50)
+    
+    return render_template_string(DASHBOARD_HTML, 
+        current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        services=services, 
+        posts_today=post_stats["posts_today"], 
+        posts_pending=post_stats["posts_pending"],
+        posts_failed=post_stats["posts_failed"], 
+        photos_24h=post_stats["photos_24h"], 
+        stories_24h=post_stats["stories_24h"],
+        total_queued=post_stats["total_queued"], 
+        posts_week=post_stats["posts_week"], 
+        comments_sent=comment_stats["comments_sent"],
+        comments_pending=comment_stats["comments_pending"], 
+        comments_total=comment_stats["comments_total"],
+        pending_replies=get_pending_replies(), 
+        recent_activity=get_recent_activity(),
+        comment_history=comment_history,
+        total_comments=total_comments,
+        stats_sent=history_stats["sent"],
+        stats_pending=history_stats["pending"],
+        stats_skipped=history_stats["skipped"],
+        stats_failed=history_stats["failed"]
+    )
 
 if __name__ == "__main__":
     print("Starting dashboard on http://0.0.0.0:5000")
