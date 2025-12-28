@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Enhanced Dashboard with Login & Comment Approval - BB-Poster-Automation
+Fixed: Replaced emojis with Font Awesome icons for cross-browser compatibility
 """
 import os, sys, json, sqlite3, subprocess, requests, secrets
 from datetime import datetime, timedelta
@@ -49,6 +50,7 @@ LOGIN_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Nyssa Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -66,7 +68,7 @@ LOGIN_HTML = """
 </head>
 <body>
     <div class="login-box">
-        <h1>?? Nyssa Dashboard</h1>
+        <h1><i class="fas fa-camera-retro"></i> Nyssa Dashboard</h1>
         <p class="subtitle">Enter password to continue</p>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
         <form method="POST">
@@ -90,6 +92,7 @@ DASHBOARD_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="refresh" content="60">
     <title>Nyssa Bloom Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }
@@ -177,18 +180,18 @@ DASHBOARD_HTML = """
 <body>
     <a href="/logout" class="logout-btn">Logout</a>
     <div class="container">
-        <h1>?? Nyssa Bloom Dashboard</h1>
+        <h1><i class="fas fa-camera-retro"></i> Nyssa Bloom Dashboard</h1>
         <p class="subtitle">Last updated: {{ current_time }}</p>
         
         <div class="nav">
-            <a href="/" class="active">?? Dashboard</a>
-            <a href="/approve">? Approve Replies {% if pending_count > 0 %}<span class="badge">{{ pending_count }}</span>{% endif %}</a>
-            <a href="/moderation">??? Moderation</a>
+            <a href="/" class="active"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="/approve"><i class="fas fa-check-circle"></i> Approve Replies {% if pending_count > 0 %}<span class="badge">{{ pending_count }}</span>{% endif %}</a>
+            <a href="/moderation"><i class="fas fa-shield-alt"></i> Moderation</a>
         </div>
         
         <div class="grid">
             <div class="card" style="grid-column: span 2;">
-                <h2>?? Instagram Profile</h2>
+                <h2><i class="fab fa-instagram"></i> Instagram Profile</h2>
                 {% if profile %}
                 <div class="profile-card">
                     <img src="{{ profile.avatar }}" alt="Profile" class="profile-avatar" onerror="this.style.display='none'">
@@ -206,7 +209,7 @@ DASHBOARD_HTML = """
                 {% else %}<div class="error-note">Could not load Instagram profile</div>{% endif %}
             </div>
             <div class="card">
-                <h2>?? Engagement</h2>
+                <h2><i class="fas fa-chart-pie"></i> Engagement</h2>
                 {% if engagement %}
                 <div style="text-align: center; padding: 10px 0;">
                     <div class="engagement-value">{{ engagement.rate }}%</div>
@@ -222,7 +225,7 @@ DASHBOARD_HTML = """
         </div>
         <div class="grid">
             <div class="card">
-                <h2>?? Services Status</h2>
+                <h2><i class="fas fa-cogs"></i> Services Status</h2>
                 {% for service in services %}
                 <div class="service-status">
                     <div class="service-dot {{ 'running' if service.running else 'stopped' }}"></div>
@@ -232,7 +235,7 @@ DASHBOARD_HTML = """
                 {% endfor %}
             </div>
             <div class="card">
-                <h2>?? Posts Overview</h2>
+                <h2><i class="fas fa-images"></i> Posts Overview</h2>
                 <div class="stat-grid">
                     <div><div class="big-number">{{ posts_today }}</div><div class="big-label">Posted Today</div></div>
                     <div><div class="big-number status-pending">{{ posts_pending }}</div><div class="big-label">Pending</div></div>
@@ -240,7 +243,7 @@ DASHBOARD_HTML = """
                 </div>
             </div>
             <div class="card">
-                <h2>?? Comment Responder</h2>
+                <h2><i class="fas fa-comments"></i> Comment Responder</h2>
                 <div class="stat-grid">
                     <div><div class="big-number status-ok">{{ comments_sent }}</div><div class="big-label">Sent</div></div>
                     <div><div class="big-number status-pending">{{ comments_pending }}</div><div class="big-label">Pending</div></div>
@@ -250,7 +253,7 @@ DASHBOARD_HTML = """
         </div>
         <div class="grid">
             <div class="card card-full">
-                <h2>?? Recent Instagram Posts</h2>
+                <h2><i class="fas fa-th"></i> Recent Instagram Posts</h2>
                 {% if ig_posts %}
                 <div class="posts-grid">
                     {% for post in ig_posts %}
@@ -258,7 +261,7 @@ DASHBOARD_HTML = """
                         <div class="post-card">
                             {% if post.thumbnail %}<img src="{{ post.thumbnail }}" alt="Post" class="post-image">{% else %}<div class="post-image-placeholder">{{ post.media_type[0] if post.media_type else '?' }}</div>{% endif %}
                             <div class="post-stats">
-                                <div style="display: flex; gap: 15px;"><div class="post-stat">?? {{ post.likes }}</div><div class="post-stat">?? {{ post.comments }}</div></div>
+                                <div style="display: flex; gap: 15px;"><div class="post-stat"><i class="fas fa-heart"></i> {{ post.likes }}</div><div class="post-stat"><i class="fas fa-comment"></i> {{ post.comments }}</div></div>
                                 <span class="post-type">{{ post.media_type }}</span>
                             </div>
                         </div>
@@ -270,24 +273,24 @@ DASHBOARD_HTML = """
         </div>
         <div class="grid">
             <div class="card">
-                <h2>?? Queue Statistics</h2>
+                <h2><i class="fas fa-list-ol"></i> Queue Statistics</h2>
                 <div class="stat-row"><span class="stat-label">Photos Posted (24h)</span><span class="stat-value">{{ photos_24h }}</span></div>
                 <div class="stat-row"><span class="stat-label">Stories Posted (24h)</span><span class="stat-value">{{ stories_24h }}</span></div>
                 <div class="stat-row"><span class="stat-label">Total in Queue</span><span class="stat-value status-pending">{{ total_queued }}</span></div>
                 <div class="stat-row"><span class="stat-label">Posts This Week</span><span class="stat-value">{{ posts_week }}</span></div>
             </div>
             <div class="card">
-                <h2>? Pending Replies</h2>
+                <h2><i class="fas fa-clock"></i> Pending Replies</h2>
                 {% if pending_replies %}{% for reply in pending_replies %}
                 <div class="activity-item">
                     <div><strong>@{{ reply.username }}</strong>: "{{ reply.comment[:40] }}..."</div>
-                    <div class="reply-text">? {{ reply.reply[:50] }}...</div>
-                    <div class="activity-time">Scheduled: {{ reply.scheduled }} <a href="/approve" style="color: #e94560; margin-left: 10px;">Review ?</a></div>
+                    <div class="reply-text"><i class="fas fa-reply"></i> {{ reply.reply[:50] }}...</div>
+                    <div class="activity-time">Scheduled: {{ reply.scheduled }} <a href="/approve" style="color: #e94560; margin-left: 10px;">Review <i class="fas fa-arrow-right"></i></a></div>
                 </div>
                 {% endfor %}{% else %}<div style="color: #888; text-align: center; padding: 20px;">No pending replies</div>{% endif %}
             </div>
             <div class="card">
-                <h2>?? Recent Activity</h2>
+                <h2><i class="fas fa-history"></i> Recent Activity</h2>
                 {% if recent_activity %}{% for activity in recent_activity %}
                 <div class="activity-item">
                     <div><span class="{{ 'status-ok' if activity.status == 'posted' else 'status-error' }}">{{ activity.status|upper }}</span> - {{ activity.content_type }}</div>
@@ -298,7 +301,7 @@ DASHBOARD_HTML = """
         </div>
         <div class="grid">
             <div class="card card-full">
-                <h2>?? Comment History (Latest {{ comment_history|length }} of {{ total_comments }})</h2>
+                <h2><i class="fas fa-scroll"></i> Comment History (Latest {{ comment_history|length }} of {{ total_comments }})</h2>
                 <div class="comment-stats">
                     <div class="comment-stat"><div class="comment-stat-num status-ok">{{ stats_sent }}</div><div class="comment-stat-label">Sent</div></div>
                     <div class="comment-stat"><div class="comment-stat-num status-pending">{{ stats_pending }}</div><div class="comment-stat-label">Pending</div></div>
@@ -331,6 +334,7 @@ APPROVE_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="refresh" content="30">
     <title>Approve Replies - Nyssa Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }
@@ -372,20 +376,20 @@ APPROVE_HTML = """
 </head>
 <body>
     <div class="container">
-        <h1>? Approve Replies</h1>
+        <h1><i class="fas fa-check-circle"></i> Approve Replies</h1>
         <p class="subtitle">Review and approve Nyssa's AI-generated responses</p>
         
         <div class="nav">
-            <a href="/">?? Dashboard</a>
-            <a href="/approve" class="active">? Approve Replies</a>
-            <a href="/moderation">??? Moderation</a>
+            <a href="/"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="/approve" class="active"><i class="fas fa-check-circle"></i> Approve Replies</a>
+            <a href="/moderation"><i class="fas fa-shield-alt"></i> Moderation</a>
         </div>
         
-        {% if message %}<div class="message success">? {{ message }}</div>{% endif %}
-        {% if error %}<div class="message error">? {{ error }}</div>{% endif %}
+        {% if message %}<div class="message success"><i class="fas fa-check"></i> {{ message }}</div>{% endif %}
+        {% if error %}<div class="message error"><i class="fas fa-times"></i> {{ error }}</div>{% endif %}
         
         <div class="info-box">
-            ?? Replies will be sent automatically at their scheduled time if not reviewed. Edit or reject to change.
+            <i class="fas fa-info-circle"></i> Replies will be sent automatically at their scheduled time if not reviewed. Edit or reject to change.
         </div>
         
         {% if pending_replies %}
@@ -395,11 +399,11 @@ APPROVE_HTML = """
                     <div class="pending-user">@{{ reply.username }}</div>
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <span class="pending-time">Scheduled: {{ reply.scheduled_time }}</span>
-                        <span class="countdown">?? {{ reply.time_left }}</span>
+                        <span class="countdown"><i class="fas fa-clock"></i> {{ reply.time_left }}</span>
                     </div>
                 </div>
                 
-                {% if reply.is_thread %}<div class="thread-indicator">?? Thread Reply (responding to their reply)</div>{% endif %}
+                {% if reply.is_thread %}<div class="thread-indicator"><i class="fas fa-code-branch"></i> Thread Reply (responding to their reply)</div>{% endif %}
                 
                 <div class="original-comment">
                     <div class="original-label">Their Comment</div>
@@ -413,16 +417,16 @@ APPROVE_HTML = """
                     </div>
                     
                     <div class="actions">
-                        <button type="submit" name="action" value="approve" class="btn btn-approve">? Approve & Send Now</button>
-                        <button type="submit" name="action" value="edit" class="btn btn-edit">?? Save Edit</button>
-                        <button type="submit" name="action" value="reject" class="btn btn-reject">? Reject</button>
+                        <button type="submit" name="action" value="approve" class="btn btn-approve"><i class="fas fa-check"></i> Approve & Send Now</button>
+                        <button type="submit" name="action" value="edit" class="btn btn-edit"><i class="fas fa-save"></i> Save Edit</button>
+                        <button type="submit" name="action" value="reject" class="btn btn-reject"><i class="fas fa-times"></i> Reject</button>
                     </div>
                 </form>
             </div>
             {% endfor %}
         {% else %}
             <div class="empty">
-                <div class="empty-icon">?</div>
+                <div class="empty-icon"><i class="fas fa-check-double"></i></div>
                 <h3>All caught up!</h3>
                 <p>No pending replies to review</p>
             </div>
@@ -439,6 +443,7 @@ MODERATION_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Comment Moderation - Nyssa Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }
@@ -478,17 +483,17 @@ MODERATION_HTML = """
 </head>
 <body>
     <div class="container">
-        <h1>??? Comment Moderation</h1>
+        <h1><i class="fas fa-shield-alt"></i> Comment Moderation</h1>
         <p class="subtitle">Manage comments on your posts</p>
         
         <div class="nav">
-            <a href="/">?? Dashboard</a>
-            <a href="/approve">? Approve Replies</a>
-            <a href="/moderation" class="active">??? Moderation</a>
+            <a href="/"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="/approve"><i class="fas fa-check-circle"></i> Approve Replies</a>
+            <a href="/moderation" class="active"><i class="fas fa-shield-alt"></i> Moderation</a>
         </div>
         
-        {% if message %}<div class="message success">? {{ message }}</div>{% endif %}
-        {% if error %}<div class="message error">? {{ error }}</div>{% endif %}
+        {% if message %}<div class="message success"><i class="fas fa-check"></i> {{ message }}</div>{% endif %}
+        {% if error %}<div class="message error"><i class="fas fa-times"></i> {{ error }}</div>{% endif %}
         
         <div class="stats">
             <div class="stat"><div class="stat-num">{{ comments|length }}</div><div class="stat-label">Total Comments</div></div>
@@ -505,7 +510,7 @@ MODERATION_HTML = """
                         {% if comment.hidden %}<span class="hidden-badge">HIDDEN</span>{% endif %}
                     </div>
                     <div class="comment-meta">
-                        <span class="likes">?? {{ comment.likes }}</span> • 
+                        <span class="likes"><i class="fas fa-heart"></i> {{ comment.likes }}</span> • 
                         {{ comment.timestamp[:10] if comment.timestamp else 'Unknown' }}
                     </div>
                 </div>
@@ -513,11 +518,11 @@ MODERATION_HTML = """
                 <div class="comment-post">On post: <a href="{{ comment.post_url }}" target="_blank">{{ comment.post_caption }}</a></div>
                 <div class="comment-actions">
                     {% if comment.hidden %}
-                    <a href="/moderation/unhide/{{ comment.id }}" class="btn btn-unhide">??? Unhide</a>
+                    <a href="/moderation/unhide/{{ comment.id }}" class="btn btn-unhide"><i class="fas fa-eye"></i> Unhide</a>
                     {% else %}
-                    <a href="/moderation/hide/{{ comment.id }}" class="btn btn-hide">?? Hide</a>
+                    <a href="/moderation/hide/{{ comment.id }}" class="btn btn-hide"><i class="fas fa-eye-slash"></i> Hide</a>
                     {% endif %}
-                    <a href="/moderation/delete/{{ comment.id }}" class="btn btn-delete" onclick="return confirm('Delete this comment permanently?')">??? Delete</a>
+                    <a href="/moderation/delete/{{ comment.id }}" class="btn btn-delete" onclick="return confirm('Delete this comment permanently?')"><i class="fas fa-trash"></i> Delete</a>
                 </div>
             </div>
             {% endfor %}
@@ -615,13 +620,11 @@ def send_comment_reply(comment_id, message):
     try:
         resp = requests.post(f"{FB_GRAPH_API}/{comment_id}/replies", params={'message': message, 'access_token': token}, timeout=10)
         data = resp.json()
-        if 'id' in data:
-            return True, data['id']
-        return False, data.get('error', {}).get('message', 'Unknown error')
+        return (True, data.get('id')) if 'id' in data else (False, data.get('error', {}).get('message', 'Unknown error'))
     except Exception as e: return False, str(e)
 
 # =============================================================================
-# LOCAL DATA FUNCTIONS
+# DATABASE FUNCTIONS
 # =============================================================================
 
 def get_service_status():
@@ -651,7 +654,8 @@ def get_post_stats():
         stats["total_queued"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status IN ('pending', 'posting')").fetchone()[0]
         stats["posts_week"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ?", (week_ago,)).fetchone()[0]
         con.close()
-    except: pass
+    except Exception as e:
+        print(f"Error: {e}")
     return stats
 
 def get_comment_stats():
@@ -662,8 +666,64 @@ def get_comment_stats():
         stats["comments_pending"] = con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'pending'").fetchone()[0]
         stats["comments_total"] = con.execute("SELECT COUNT(*) FROM comment_replies").fetchone()[0]
         con.close()
-    except: pass
+    except:
+        pass
     return stats
+
+def get_pending_replies():
+    replies = []
+    try:
+        con = sqlite3.connect(DB_FILE)
+        rows = con.execute("SELECT username, comment_text, reply_text, scheduled_at FROM comment_replies WHERE status = 'pending' ORDER BY scheduled_at ASC LIMIT 5").fetchall()
+        for row in rows:
+            replies.append({"username": row[0], "comment": row[1], "reply": row[2] or "No reply generated", "scheduled": datetime.fromtimestamp(row[3]).strftime("%H:%M:%S") if row[3] else "N/A"})
+        con.close()
+    except:
+        pass
+    return replies
+
+def get_recent_activity():
+    activity = []
+    try:
+        con = sqlite3.connect(DB_FILE)
+        rows = con.execute("SELECT content_type, file_path, status, posted_at, created_at FROM media_files WHERE status IN ('posted', 'failed') ORDER BY COALESCE(posted_at, created_at) DESC LIMIT 10").fetchall()
+        for row in rows:
+            timestamp = row[3] or row[4]
+            activity.append({"content_type": row[0], "filename": os.path.basename(row[1]), "status": row[2], "time": datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M") if timestamp else "N/A"})
+        con.close()
+    except:
+        pass
+    return activity
+
+def get_comment_history(limit=30):
+    history = []
+    total = 0
+    stats = {"sent": 0, "pending": 0, "skipped": 0, "failed": 0, "rejected": 0}
+    try:
+        con = sqlite3.connect(DB_FILE)
+        total = con.execute("SELECT COUNT(*) FROM comment_replies").fetchone()[0]
+        rows = con.execute("SELECT status, COUNT(*) FROM comment_replies GROUP BY status").fetchall()
+        for row in rows:
+            if row[0] in stats:
+                stats[row[0]] = row[1]
+        rows = con.execute("SELECT username, comment_text, reply_text, status, created_at, replied_at FROM comment_replies ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+        for row in rows:
+            created = datetime.fromtimestamp(row[4]).strftime("%Y-%m-%d %H:%M") if row[4] else "N/A"
+            replied = datetime.fromtimestamp(row[5]).strftime("%H:%M:%S") if row[5] else None
+            history.append({"username": row[0], "text": row[1], "reply": row[2], "status": row[3], "created": created, "replied_time": replied})
+        con.close()
+    except Exception as e:
+        print(f"Error getting comment history: {e}")
+    return history, total, stats
+
+def get_pending_count():
+    try:
+        con = sqlite3.connect(DB_FILE)
+        count = con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'pending'").fetchone()[0]
+        con.close()
+        return count
+    except:
+        return 0
 
 def get_pending_replies_for_approval():
     replies = []
@@ -673,74 +733,33 @@ def get_pending_replies_for_approval():
             SELECT id, username, comment_text, reply_text, scheduled_at, parent_comment_id 
             FROM comment_replies 
             WHERE status = 'pending' 
-            ORDER BY scheduled_at ASC
+            ORDER BY scheduled_at ASC 
+            LIMIT 20
         """).fetchall()
-        now = datetime.now().timestamp()
+        now = datetime.now()
         for row in rows:
-            scheduled_ts = row[4] if row[4] else now + 3600
-            scheduled_dt = datetime.fromtimestamp(scheduled_ts)
-            time_left_sec = max(0, scheduled_ts - now)
-            if time_left_sec > 3600:
-                time_left = f"{int(time_left_sec // 3600)}h {int((time_left_sec % 3600) // 60)}m"
-            elif time_left_sec > 60:
-                time_left = f"{int(time_left_sec // 60)}m"
+            scheduled = datetime.fromtimestamp(row[4]) if row[4] else now
+            time_diff = scheduled - now
+            if time_diff.total_seconds() > 0:
+                hours, remainder = divmod(int(time_diff.total_seconds()), 3600)
+                minutes, _ = divmod(remainder, 60)
+                time_left = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
             else:
-                time_left = f"{int(time_left_sec)}s"
+                time_left = "Soon"
             replies.append({
-                "id": row[0],
-                "username": row[1],
-                "comment": row[2] or "",
-                "reply": row[3] or "",
-                "scheduled_time": scheduled_dt.strftime("%H:%M:%S"),
-                "time_left": time_left,
+                "id": row[0], "username": row[1], "comment": row[2], "reply": row[3] or "",
+                "scheduled_time": scheduled.strftime("%H:%M:%S"), "time_left": time_left,
                 "is_thread": row[5] is not None
             })
         con.close()
     except Exception as e:
-        print(f"Error getting pending replies: {e}")
+        print(f"Error: {e}")
     return replies
-
-def get_pending_replies():
-    try:
-        con = sqlite3.connect(DB_FILE)
-        rows = con.execute("SELECT username, comment_text, reply_text, scheduled_at FROM comment_replies WHERE status = 'pending' ORDER BY scheduled_at ASC LIMIT 5").fetchall()
-        con.close()
-        return [{"username": r[0], "comment": r[1] or "", "reply": r[2] or "...", "scheduled": datetime.fromtimestamp(r[3]).strftime("%H:%M:%S") if r[3] else "N/A"} for r in rows]
-    except: return []
-
-def get_pending_count():
-    try:
-        con = sqlite3.connect(DB_FILE)
-        count = con.execute("SELECT COUNT(*) FROM comment_replies WHERE status = 'pending'").fetchone()[0]
-        con.close()
-        return count
-    except: return 0
-
-def get_recent_activity():
-    try:
-        con = sqlite3.connect(DB_FILE)
-        rows = con.execute("SELECT content_type, file_path, status, posted_at, created_at FROM media_files WHERE status IN ('posted', 'failed') ORDER BY COALESCE(posted_at, created_at) DESC LIMIT 10").fetchall()
-        con.close()
-        return [{"content_type": r[0], "filename": os.path.basename(r[1]), "status": r[2], "time": datetime.fromtimestamp(r[3] or r[4]).strftime("%Y-%m-%d %H:%M") if (r[3] or r[4]) else "N/A"} for r in rows]
-    except: return []
-
-def get_comment_history(limit=30):
-    history, total, stats = [], 0, {"sent": 0, "pending": 0, "skipped": 0, "failed": 0, "rejected": 0}
-    try:
-        con = sqlite3.connect(DB_FILE)
-        total = con.execute("SELECT COUNT(*) FROM comment_replies").fetchone()[0]
-        for row in con.execute("SELECT status, COUNT(*) FROM comment_replies GROUP BY status").fetchall():
-            if row[0] in stats: stats[row[0]] = row[1]
-        for row in con.execute("SELECT username, comment_text, reply_text, status, created_at, replied_at FROM comment_replies ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall():
-            history.append({"username": row[0] or "unknown", "text": row[1] or "", "reply": row[2], "status": row[3] or "unknown", "created": datetime.fromtimestamp(row[4]).strftime("%Y-%m-%d %H:%M") if row[4] else "N/A", "replied_time": datetime.fromtimestamp(row[5]).strftime("%H:%M:%S") if row[5] else None})
-        con.close()
-    except: pass
-    return history, total, stats
 
 def update_reply_status(reply_id, status, new_text=None):
     try:
         con = sqlite3.connect(DB_FILE)
-        if new_text is not None:
+        if new_text:
             con.execute("UPDATE comment_replies SET status = ?, reply_text = ? WHERE id = ?", (status, new_text, reply_id))
         else:
             con.execute("UPDATE comment_replies SET status = ? WHERE id = ?", (status, reply_id))
