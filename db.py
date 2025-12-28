@@ -230,8 +230,8 @@ def update_job_status(
             con.execute(
                 """
                 UPDATE media_files 
-                SET status = ?, error_message = ?, last_attempt_at = ?,
-                    attempts = attempts + 1
+                SET status = ?, error_message = ?,
+                    last_attempt_at = ?, attempts = attempts + 1
                 WHERE id = ?
                 """,
                 (status, error_message, now, job_id)
@@ -290,6 +290,21 @@ def retry_failed_jobs(max_attempts: int = 3) -> int:
             WHERE status = ? AND attempts < ?
             """,
             (STATUS_PENDING, STATUS_FAILED, max_attempts)
+        )
+        con.commit()
+        return cur.rowcount
+
+
+def clear_pending_jobs() -> int:
+    """
+    Delete all pending jobs from the database.
+    Useful for re-scanning files with new schedule times.
+    Returns number of jobs deleted.
+    """
+    with get_connection() as con:
+        cur = con.execute(
+            "DELETE FROM media_files WHERE status = ?",
+            (STATUS_PENDING,)
         )
         con.commit()
         return cur.rowcount
@@ -375,6 +390,21 @@ def get_scheduled_jobs(days_ahead: int = 7) -> List[Dict[str, Any]]:
         return [dict(row) for row in cur.fetchall()]
 
 
+def get_all_scheduled_jobs() -> List[Dict[str, Any]]:
+    """Get ALL scheduled jobs (no date limit)."""
+    with get_connection() as con:
+        cur = con.execute(
+            """
+            SELECT * FROM media_files 
+            WHERE status = ? 
+              AND scheduled_for IS NOT NULL
+            ORDER BY scheduled_for ASC
+            """,
+            (STATUS_PENDING,)
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
 # -----------------------------------------------------------------------------
 # Statistics
 # -----------------------------------------------------------------------------
@@ -420,8 +450,10 @@ if __name__ == "__main__":
     parser.add_argument("--stats", action="store_true", help="Show queue statistics")
     parser.add_argument("--pending", action="store_true", help="List pending jobs")
     parser.add_argument("--scheduled", action="store_true", help="List scheduled jobs for next 7 days")
+    parser.add_argument("--scheduled-all", action="store_true", help="List ALL scheduled jobs")
     parser.add_argument("--reset-stale", action="store_true", help="Reset stale 'posting' jobs")
     parser.add_argument("--retry-failed", action="store_true", help="Retry failed jobs")
+    parser.add_argument("--clear-pending", action="store_true", help="Delete all pending jobs (for re-scanning)")
     args = parser.parse_args()
     
     if args.init:
@@ -453,6 +485,19 @@ if __name__ == "__main__":
                 print(f"  {dt.strftime('%m/%d/%Y %I:%M %p')} | [{job['id']}] {job['platform']}/{job['content_type']}: {job['file_path']}{caption_preview}")
         else:
             print("No scheduled jobs for the next 7 days.")
+    elif args.scheduled_all:
+        init_db()
+        jobs = get_all_scheduled_jobs()
+        if jobs:
+            print(f"ALL scheduled posts ({len(jobs)} total):\n")
+            for job in jobs:
+                dt = datetime.fromtimestamp(job["scheduled_for"])
+                caption_preview = ""
+                if job.get("caption"):
+                    caption_preview = f" - \"{job['caption'][:30]}...\""
+                print(f"  {dt.strftime('%m/%d/%Y %I:%M %p')} | [{job['id']}] {job['platform']}/{job['content_type']}: {job['file_path']}{caption_preview}")
+        else:
+            print("No scheduled jobs.")
     elif args.reset_stale:
         init_db()
         count = reset_stale_jobs()
@@ -461,5 +506,9 @@ if __name__ == "__main__":
         init_db()
         count = retry_failed_jobs()
         print(f"Reset {count} failed job(s) for retry.")
+    elif args.clear_pending:
+        init_db()
+        count = clear_pending_jobs()
+        print(f"Cleared {count} pending job(s). Run scanner to re-add with new times.")
     else:
         parser.print_help()

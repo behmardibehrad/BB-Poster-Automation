@@ -14,6 +14,7 @@ Caption files:
 import os
 import re
 import time
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -85,6 +86,40 @@ def parse_scheduled_filename(filename: str) -> Optional[Tuple[datetime, str]]:
         return None
 
 
+def parse_time_string(time_str: str) -> Tuple[int, int]:
+    """Parse a time string like '10:00' or '15:30' into (hour, minute)."""
+    hour, minute = map(int, time_str.split(':'))
+    return hour, minute
+
+
+def random_time_in_range(start_time: str, end_time: str) -> Tuple[int, int]:
+    """
+    Generate a random time between start_time and end_time.
+    
+    Args:
+        start_time: Time string like "09:00"
+        end_time: Time string like "11:30"
+    
+    Returns:
+        Tuple of (hour, minute) for a random time in the range
+    """
+    start_h, start_m = parse_time_string(start_time)
+    end_h, end_m = parse_time_string(end_time)
+    
+    # Convert to total minutes from midnight
+    start_total = start_h * 60 + start_m
+    end_total = end_h * 60 + end_m
+    
+    # Pick a random minute in the range
+    random_total = random.randint(start_total, end_total)
+    
+    # Convert back to hour and minute
+    hour = random_total // 60
+    minute = random_total % 60
+    
+    return hour, minute
+
+
 def calculate_scheduled_time(
     date: datetime,
     time_slot: str,
@@ -92,6 +127,7 @@ def calculate_scheduled_time(
 ) -> Optional[int]:
     """
     Calculate the Unix timestamp for when a post should go live.
+    Uses randomized time within the configured range.
     
     Args:
         date: The date from the filename
@@ -105,12 +141,18 @@ def calculate_scheduled_time(
     if not schedule:
         return None
     
-    time_str = schedule.get(time_slot)
-    if not time_str:
+    time_range = schedule.get(time_slot)
+    if not time_range:
         return None
     
-    # Parse time string like "10:00" or "15:00"
-    hour, minute = map(int, time_str.split(':'))
+    # Handle both old format (single time string) and new format (tuple range)
+    if isinstance(time_range, tuple):
+        # New format: ("09:00", "11:30") - pick random time in range
+        start_time, end_time = time_range
+        hour, minute = random_time_in_range(start_time, end_time)
+    else:
+        # Old format: "10:00" - use exact time (backward compatibility)
+        hour, minute = parse_time_string(time_range)
     
     scheduled_dt = date.replace(hour=hour, minute=minute, second=0, microsecond=0)
     return int(scheduled_dt.timestamp())

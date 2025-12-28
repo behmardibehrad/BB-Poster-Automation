@@ -19,30 +19,33 @@ MEDIA_ROOT = os.path.join(PROJECT_ROOT, "media_root")
 MEDIA_SERVER_SCRIPT = os.path.join(PROJECT_ROOT, "media_server.py")
 
 # -----------------------------------------------------------------------------
-# Posting Schedule (24-hour format)
+# Posting Schedule (24-hour format) - RANDOMIZED TIME RANGES
 # Files named like: 12_26_2025_am.jpg or 12_26_2025_pm.mp4
+#
+# Each slot now has a range: ("start_time", "end_time")
+# The scanner will pick a random time within this range.
 # -----------------------------------------------------------------------------
 
 POSTING_SCHEDULE = {
     "Photos": {
-        "am": "10:00",
-        "pm": "15:00",
+        "am": ("09:00", "11:30"),   # Random between 9:00 AM - 11:30 AM
+        "pm": ("14:30", "17:00"),   # Random between 2:30 PM - 5:00 PM
     },
     "Feeds": {
-        "am": "10:00",
-        "pm": "15:00",
+        "am": ("09:00", "11:30"),
+        "pm": ("14:30", "17:00"),
     },
     "Videos": {
-        "am": "11:00",  # 1 hour after photo
-        "pm": "16:00",
+        "am": ("10:00", "12:30"),   # 1 hour offset from photos
+        "pm": ("15:30", "18:00"),
     },
     "Reels": {
-        "am": "11:00",
-        "pm": "16:00",
+        "am": ("10:00", "12:30"),
+        "pm": ("15:30", "18:00"),
     },
     "Stories": {
-        "am": "10:30",
-        "pm": "15:30",
+        "am": ("09:30", "12:00"),
+        "pm": ("15:00", "17:30"),
     },
 }
 
@@ -167,3 +170,9 @@ if __name__ == "__main__":
     print(f"\nLog files created in: {LOG_DIR}")
     print(f"  - {LOG_DIR}/config_test.log")
     print(f"  - {LOG_DIR}/all.log")
+    
+    print("\n--- Posting Schedule (Randomized Ranges) ---")
+    for content_type, slots in POSTING_SCHEDULE.items():
+        print(f"\n{content_type}:")
+        for slot, time_range in slots.items():
+            print(f"  {slot.upper()}: {time_range[0]} - {time_range[1]}")
