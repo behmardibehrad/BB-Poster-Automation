@@ -5,13 +5,6 @@ country_brands:
     - Sla_Vey
 
 tree:
-  - FB_Account
-  - FB_Page:
-      - Photos
-      - Videos
-      - Feeds
-      - Reels
-      - Stories
   - Instagram:
       - Photos
       - Videos
