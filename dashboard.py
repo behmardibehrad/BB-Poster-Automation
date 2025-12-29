@@ -4,13 +4,15 @@
 Enhanced Dashboard with Login & Comment Approval - BB-Poster-Automation
 Fixed: Replaced emojis with Font Awesome icons for cross-browser compatibility
 """
-import os, sys, json, sqlite3, subprocess, requests, secrets
+import os, sys, json, sqlite3, subprocess, requests, secrets, random, shutil
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, render_template_string, request, redirect, url_for, make_response
+from flask import Flask, render_template_string, request, redirect, url_for, make_response, send_from_directory
 
 PROJECT_ROOT = os.path.expanduser("~/BB-Poster-Automation")
 DB_FILE = os.path.join(PROJECT_ROOT, "poster.sqlite3")
+MEDIA_ROOT = os.path.join(PROJECT_ROOT, "media_root")
+PHOTOS_DIR = os.path.join(PROJECT_ROOT, "United_States", "Nyssa_Bloom", "Instagram", "Photos")
 FB_GRAPH_API = "https://graph.facebook.com/v21.0"
 
 app = Flask(__name__)
@@ -185,6 +187,7 @@ DASHBOARD_HTML = """
         
         <div class="nav">
             <a href="/" class="active"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="/posts"><i class="fas fa-images"></i> Post Review</a>
             <a href="/approve"><i class="fas fa-check-circle"></i> Approve Replies {% if pending_count > 0 %}<span class="badge">{{ pending_count }}</span>{% endif %}</a>
             <a href="/moderation"><i class="fas fa-shield-alt"></i> Moderation</a>
         </div>
@@ -381,6 +384,7 @@ APPROVE_HTML = """
         
         <div class="nav">
             <a href="/"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="/posts"><i class="fas fa-images"></i> Post Review</a>
             <a href="/approve" class="active"><i class="fas fa-check-circle"></i> Approve Replies</a>
             <a href="/moderation"><i class="fas fa-shield-alt"></i> Moderation</a>
         </div>
@@ -488,6 +492,7 @@ MODERATION_HTML = """
         
         <div class="nav">
             <a href="/"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="/posts"><i class="fas fa-images"></i> Post Review</a>
             <a href="/approve"><i class="fas fa-check-circle"></i> Approve Replies</a>
             <a href="/moderation" class="active"><i class="fas fa-shield-alt"></i> Moderation</a>
         </div>
@@ -533,6 +538,303 @@ MODERATION_HTML = """
 </body>
 </html>
 """
+
+POST_REVIEW_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post Review - Nyssa Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 10px; font-size: 2rem; color: #e94560; }
+        .subtitle { text-align: center; color: #888; margin-bottom: 20px; font-size: 0.9rem; }
+        .nav { display: flex; justify-content: center; gap: 15px; margin-bottom: 30px; flex-wrap: wrap; }
+        .nav a { color: #e94560; text-decoration: none; padding: 10px 20px; border: 1px solid #e94560; border-radius: 8px; transition: all 0.2s; font-size: 0.9rem; }
+        .nav a:hover, .nav a.active { background: #e94560; color: #fff; }
+        
+        .date-header { background: rgba(233, 69, 96, 0.1); border: 1px solid rgba(233, 69, 96, 0.3); border-radius: 12px; padding: 15px 25px; margin-bottom: 25px; display: flex; align-items: center; justify-content: center; gap: 15px; }
+        .date-header i { color: #e94560; font-size: 1.5rem; }
+        .date-header h2 { font-size: 1.4rem; font-weight: 600; }
+        .date-header .badge { background: #e94560; color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
+        
+        .posts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px; }
+        @media (max-width: 900px) { .posts-grid { grid-template-columns: 1fr; } }
+        
+        .post-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; overflow: hidden; }
+        .card-header { background: rgba(255,255,255,0.03); padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; }
+        .card-header.am { border-left: 4px solid #fbbf24; }
+        .card-header.pm { border-left: 4px solid #8b5cf6; }
+        .card-header.am i { color: #fbbf24; }
+        .card-header.pm i { color: #8b5cf6; }
+        .card-header h3 { font-size: 1rem; font-weight: 600; flex: 1; }
+        .time-badge { background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; color: #888; }
+        
+        .card-body { padding: 20px; }
+        .post-content { display: flex; gap: 20px; }
+        @media (max-width: 600px) { .post-content { flex-direction: column; } }
+        
+        .post-image { width: 180px; height: 180px; border-radius: 12px; object-fit: cover; background: #222; flex-shrink: 0; }
+        .post-image-placeholder { width: 180px; height: 180px; border-radius: 12px; background: linear-gradient(135deg, #2a2a4a 0%, #1a1a3a 100%); display: flex; align-items: center; justify-content: center; flex-direction: column; color: #666; flex-shrink: 0; }
+        .post-image-placeholder i { font-size: 3rem; margin-bottom: 10px; }
+        
+        .post-details { flex: 1; min-width: 0; }
+        .caption-text { color: #ccc; font-size: 0.85rem; line-height: 1.6; margin-bottom: 15px; max-height: 100px; overflow-y: auto; }
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 500; background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+        
+        .card-footer { padding: 15px 20px; background: rgba(0,0,0,0.2); }
+        .btn-replace { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px 20px; background: rgba(233, 69, 96, 0.2); color: #e94560; border: 1px solid #e94560; border-radius: 8px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+        .btn-replace:hover { background: #e94560; color: #fff; }
+        
+        .message { padding: 15px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .message.success { background: rgba(74, 222, 128, 0.15); border: 1px solid rgba(74, 222, 128, 0.3); color: #4ade80; }
+        .message.error { background: rgba(248, 113, 113, 0.15); border: 1px solid rgba(248, 113, 113, 0.3); color: #f87171; }
+        
+        .swap-info { background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.3); color: #a78bfa; padding: 10px 15px; border-radius: 8px; font-size: 0.85rem; margin-top: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-camera-retro"></i> Nyssa Dashboard</h1>
+        <p class="subtitle">Post Review & Management</p>
+        
+        <nav class="nav">
+            <a href="/"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="/posts" class="active"><i class="fas fa-images"></i> Post Review</a>
+            <a href="/approve"><i class="fas fa-check-circle"></i> Approve</a>
+            <a href="/moderation"><i class="fas fa-shield-alt"></i> Moderation</a>
+        </nav>
+        
+        {% if message %}<div class="message success"><i class="fas fa-check-circle"></i> {{ message }}</div>{% endif %}
+        {% if error %}<div class="message error"><i class="fas fa-exclamation-circle"></i> {{ error }}</div>{% endif %}
+        
+        <div class="date-header">
+            <i class="fas fa-calendar-alt"></i>
+            <h2>{{ post_data.date_display }}</h2>
+            {% if is_today %}<span class="badge">TODAY</span>{% elif is_tomorrow %}<span class="badge">TOMORROW</span>{% endif %}
+        </div>
+        
+        <div class="posts-grid">
+            <!-- AM Post -->
+            <div class="post-card">
+                <div class="card-header am">
+                    <i class="fas fa-sun"></i>
+                    <h3>Morning Post</h3>
+                    <span class="time-badge">10:00 AM</span>
+                </div>
+                {% if post_data.am and post_data.am.exists %}
+                <div class="card-body">
+                    <div class="post-content">
+                        <img src="/media/{{ post_data.am.image_filename }}" class="post-image" alt="AM Post">
+                        <div class="post-details">
+                            <div class="caption-text">{{ post_data.am.caption_preview }}</div>
+                            <span class="status-badge"><i class="fas fa-check-circle"></i> Ready</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <a href="/posts/replace/{{ post_data.date_str }}/am" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                </div>
+                {% else %}
+                <div class="card-body">
+                    <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No morning post</span></div>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- PM Post -->
+            <div class="post-card">
+                <div class="card-header pm">
+                    <i class="fas fa-moon"></i>
+                    <h3>Evening Post</h3>
+                    <span class="time-badge">3:00 PM</span>
+                </div>
+                {% if post_data.pm and post_data.pm.exists %}
+                <div class="card-body">
+                    <div class="post-content">
+                        <img src="/media/{{ post_data.pm.image_filename }}" class="post-image" alt="PM Post">
+                        <div class="post-details">
+                            <div class="caption-text">{{ post_data.pm.caption_preview }}</div>
+                            <span class="status-badge"><i class="fas fa-check-circle"></i> Ready</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <a href="/posts/replace/{{ post_data.date_str }}/pm" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                </div>
+                {% else %}
+                <div class="card-body">
+                    <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No evening post</span></div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if last_swap %}<div class="swap-info"><i class="fas fa-info-circle"></i> {{ last_swap }}</div>{% endif %}
+    </div>
+</body>
+</html>
+"""
+
+# =============================================================================
+# POST REVIEW HELPER FUNCTIONS
+# =============================================================================
+
+def parse_filename_date(filename):
+    """Parse MM_DD_YYYY_am/pm from filename"""
+    try:
+        base = os.path.splitext(filename)[0]
+        parts = base.split('_')
+        if len(parts) >= 4:
+            month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+            slot = parts[3].lower()
+            return datetime(year, month, day), slot
+    except:
+        pass
+    return None, None
+
+def get_next_posting_day():
+    """Get the next day that has posts scheduled"""
+    today = datetime.now().date()
+    
+    for days_ahead in range(0, 60):
+        check_date = today + timedelta(days=days_ahead)
+        date_str = check_date.strftime("%m_%d_%Y")
+        
+        am_file = os.path.join(PHOTOS_DIR, f"{date_str}_am.jpg")
+        pm_file = os.path.join(PHOTOS_DIR, f"{date_str}_pm.jpg")
+        
+        if os.path.exists(am_file) or os.path.exists(pm_file):
+            if days_ahead == 0:
+                try:
+                    con = sqlite3.connect(DB_FILE)
+                    today_start = datetime.combine(today, datetime.min.time())
+                    cur = con.execute("SELECT COUNT(*) FROM posts WHERE posted_at >= ? AND status = 'posted'", 
+                                     (int(today_start.timestamp()),))
+                    posted_today = cur.fetchone()[0]
+                    con.close()
+                    if posted_today >= 2:
+                        continue
+                except:
+                    pass
+            return check_date
+    
+    return today + timedelta(days=1)
+
+def get_post_for_day(target_date):
+    """Get AM and PM post info for a specific date"""
+    date_str = target_date.strftime("%m_%d_%Y")
+    
+    result = {
+        'date': target_date,
+        'date_display': target_date.strftime("%B %d, %Y"),
+        'date_str': date_str,
+        'am': None,
+        'pm': None
+    }
+    
+    for slot in ['am', 'pm']:
+        img_path = os.path.join(PHOTOS_DIR, f"{date_str}_{slot}.jpg")
+        caption_path = os.path.join(PHOTOS_DIR, f"{date_str}_{slot}.txt")
+        
+        if os.path.exists(img_path):
+            caption = ""
+            if os.path.exists(caption_path):
+                try:
+                    with open(caption_path, 'r', encoding='utf-8') as f:
+                        caption = f.read().strip()
+                except:
+                    caption = "(No caption)"
+            
+            result[slot] = {
+                'image_path': img_path,
+                'image_filename': f"{date_str}_{slot}.jpg",
+                'caption': caption,
+                'caption_preview': caption[:150] + '...' if len(caption) > 150 else caption,
+                'exists': True
+            }
+        else:
+            result[slot] = {'exists': False}
+    
+    return result
+
+def get_future_posts(after_date, exclude_date_str=None, exclude_slot=None):
+    """Get list of all future posts for swapping"""
+    future_posts = []
+    
+    if not os.path.exists(PHOTOS_DIR):
+        return future_posts
+    
+    for filename in os.listdir(PHOTOS_DIR):
+        if not filename.endswith('.jpg'):
+            continue
+        
+        file_date, slot = parse_filename_date(filename)
+        if file_date is None:
+            continue
+        
+        if file_date.date() <= after_date:
+            continue
+        
+        date_str = file_date.strftime("%m_%d_%Y")
+        if exclude_date_str and exclude_slot:
+            if date_str == exclude_date_str and slot == exclude_slot:
+                continue
+        
+        future_posts.append({
+            'date': file_date,
+            'date_str': date_str,
+            'slot': slot,
+            'filename': filename
+        })
+    
+    return future_posts
+
+def swap_posts(date1_str, slot1, date2_str, slot2):
+    """Swap two posts (image and caption)"""
+    try:
+        img1 = os.path.join(PHOTOS_DIR, f"{date1_str}_{slot1}.jpg")
+        img2 = os.path.join(PHOTOS_DIR, f"{date2_str}_{slot2}.jpg")
+        cap1 = os.path.join(PHOTOS_DIR, f"{date1_str}_{slot1}.txt")
+        cap2 = os.path.join(PHOTOS_DIR, f"{date2_str}_{slot2}.txt")
+        
+        temp_img = os.path.join(PHOTOS_DIR, "_temp_.jpg")
+        temp_cap = os.path.join(PHOTOS_DIR, "_temp_.txt")
+        
+        if os.path.exists(img1) and os.path.exists(img2):
+            shutil.move(img1, temp_img)
+            shutil.move(img2, img1)
+            shutil.move(temp_img, img2)
+        
+        if os.path.exists(cap1) and os.path.exists(cap2):
+            shutil.move(cap1, temp_cap)
+            shutil.move(cap2, cap1)
+            shutil.move(temp_cap, cap2)
+        elif os.path.exists(cap1):
+            shutil.move(cap1, cap2)
+        elif os.path.exists(cap2):
+            shutil.move(cap2, cap1)
+        
+        return True, f"Swapped with {date2_str} {slot2.upper()}"
+    except Exception as e:
+        return False, str(e)
+
+def replace_post_random(date_str, slot):
+    """Replace a post with a random future post"""
+    parts = date_str.split('_')
+    target_date = datetime(int(parts[2]), int(parts[0]), int(parts[1])).date()
+    
+    future_posts = get_future_posts(target_date, date_str, slot)
+    
+    if not future_posts:
+        return False, "No future posts available"
+    
+    chosen = random.choice(future_posts)
+    return swap_posts(date_str, slot, chosen['date_str'], chosen['slot'])
 
 # =============================================================================
 # INSTAGRAM API FUNCTIONS
@@ -908,6 +1210,38 @@ def api_stats():
     profile = get_instagram_profile()
     ig_posts = get_instagram_posts(8)
     return {'profile': profile, 'engagement': calculate_engagement(ig_posts, profile['followers'] if profile else 0), 'posts': get_post_stats(), 'comments': get_comment_stats()}
+
+# =============================================================================
+# POST REVIEW ROUTES
+# =============================================================================
+
+@app.route("/posts")
+@requires_auth
+def posts_review():
+    next_day = get_next_posting_day()
+    post_data = get_post_for_day(next_day)
+    today = datetime.now().date()
+    
+    return render_template_string(POST_REVIEW_HTML,
+        post_data=post_data,
+        is_today=(next_day == today),
+        is_tomorrow=(next_day == today + timedelta(days=1)),
+        message=request.args.get('message'),
+        error=request.args.get('error'),
+        last_swap=request.args.get('swap'))
+
+@app.route("/posts/replace/<date_str>/<slot>")
+@requires_auth
+def replace_post(date_str, slot):
+    success, msg = replace_post_random(date_str, slot)
+    if success:
+        return redirect(url_for('posts_review', message=f"Replaced {slot.upper()} post!", swap=msg))
+    return redirect(url_for('posts_review', error=f"Failed: {msg}"))
+
+@app.route("/media/<filename>")
+@requires_auth
+def serve_media(filename):
+    return send_from_directory(PHOTOS_DIR, filename)
 
 if __name__ == "__main__":
     print("Dashboard with auth on http://0.0.0.0:5000")

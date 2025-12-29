@@ -1,7 +1,7 @@
 # Content folders (images, captions)
 United_States/
 United_Kingdom/
-
+backups/
 # Database files
 *.sqlite3
 
