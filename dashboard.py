@@ -12,6 +12,7 @@ from flask import Flask, render_template_string, request, redirect, url_for, mak
 PROJECT_ROOT = os.path.expanduser("~/BB-Poster-Automation")
 DB_FILE = os.path.join(PROJECT_ROOT, "poster.sqlite3")
 PHOTOS_DIR = os.path.join(PROJECT_ROOT, "United_States", "Nyssa_Bloom", "Instagram", "Photos")
+STORIES_DIR = os.path.join(PROJECT_ROOT, "United_States", "Nyssa_Bloom", "Instagram", "Stories")
 FB_GRAPH_API = "https://graph.facebook.com/v21.0"
 
 app = Flask(__name__)
@@ -593,7 +594,7 @@ POST_REVIEW_HTML = """
         .nav a { color: #e94560; text-decoration: none; padding: 10px 20px; border: 1px solid #e94560; border-radius: 8px; transition: all 0.2s; font-size: 0.9rem; }
         .nav a:hover, .nav a.active { background: #e94560; color: #fff; }
         
-        .day-section { margin-bottom: 30px; }
+        .day-section { margin-bottom: 25px; }
         .date-header { background: rgba(233, 69, 96, 0.1); border: 1px solid rgba(233, 69, 96, 0.3); border-radius: 12px; padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 12px; }
         .date-header.tomorrow { background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.3); }
         .date-header i { color: #e94560; font-size: 1.2rem; }
@@ -602,35 +603,46 @@ POST_REVIEW_HTML = """
         .date-header .badge { background: #e94560; color: #fff; padding: 3px 10px; border-radius: 15px; font-size: 0.7rem; font-weight: bold; margin-left: auto; }
         .date-header.tomorrow .badge { background: #8b5cf6; }
         
-        .posts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+        .content-section { margin-bottom: 15px; }
+        .content-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-left: 5px; }
+        .content-header i { font-size: 1rem; }
+        .content-header.photos i { color: #e94560; }
+        .content-header.stories i { color: #06b6d4; }
+        .content-header h3 { font-size: 0.95rem; font-weight: 600; color: #ccc; }
+        
+        .posts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
         @media (max-width: 900px) { .posts-grid { grid-template-columns: 1fr; } }
         
-        .post-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; overflow: hidden; }
-        .card-header { background: rgba(255,255,255,0.03); padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px; }
+        .post-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; }
+        .post-card.story { border-color: rgba(6, 182, 212, 0.3); }
+        .card-header { background: rgba(255,255,255,0.03); padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px; }
         .card-header.am { border-left: 3px solid #fbbf24; }
         .card-header.pm { border-left: 3px solid #8b5cf6; }
         .card-header.am i { color: #fbbf24; }
         .card-header.pm i { color: #8b5cf6; }
-        .card-header h3 { font-size: 0.9rem; font-weight: 600; flex: 1; }
-        .time-badge { background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 5px; font-size: 0.7rem; color: #4ade80; font-weight: 600; }
+        .card-header h4 { font-size: 0.85rem; font-weight: 600; flex: 1; }
+        .time-badge { background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 5px; font-size: 0.7rem; color: #4ade80; font-weight: 600; }
         
-        .card-body { padding: 15px; }
-        .post-content { display: flex; gap: 15px; }
-        @media (max-width: 600px) { .post-content { flex-direction: column; } }
+        .card-body { padding: 12px; }
+        .post-content { display: flex; gap: 12px; }
         
-        .post-image { width: 140px; height: 140px; border-radius: 10px; object-fit: cover; background: #222; flex-shrink: 0; }
-        .post-image-placeholder { width: 140px; height: 140px; border-radius: 10px; background: linear-gradient(135deg, #2a2a4a 0%, #1a1a3a 100%); display: flex; align-items: center; justify-content: center; flex-direction: column; color: #666; flex-shrink: 0; font-size: 0.8rem; }
-        .post-image-placeholder i { font-size: 2rem; margin-bottom: 8px; }
+        .post-image, .post-video { width: 100px; height: 100px; border-radius: 8px; object-fit: cover; background: #222; flex-shrink: 0; }
+        .post-image.story, .post-video.story { border: 2px solid #06b6d4; }
+        .post-video { cursor: pointer; }
+        .video-container { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+        .video-container .play-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 1.5rem; text-shadow: 0 0 10px rgba(0,0,0,0.8); pointer-events: none; }
+        .post-image-placeholder { width: 100px; height: 100px; border-radius: 8px; background: linear-gradient(135deg, #2a2a4a 0%, #1a1a3a 100%); display: flex; align-items: center; justify-content: center; flex-direction: column; color: #555; flex-shrink: 0; font-size: 0.7rem; }
+        .post-image-placeholder i { font-size: 1.5rem; margin-bottom: 5px; }
         
         .post-details { flex: 1; min-width: 0; }
-        .caption-text { color: #ccc; font-size: 0.8rem; line-height: 1.5; margin-bottom: 10px; max-height: 80px; overflow-y: auto; }
-        .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 15px; font-size: 0.75rem; font-weight: 500; }
+        .caption-text { color: #aaa; font-size: 0.75rem; line-height: 1.4; margin-bottom: 8px; max-height: 50px; overflow: hidden; }
+        .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 500; }
         .status-badge.pending { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
         .status-badge.posted { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
         .status-badge.failed { background: rgba(248, 113, 113, 0.15); color: #f87171; }
         
-        .card-footer { padding: 10px 15px; background: rgba(0,0,0,0.2); }
-        .btn-replace { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 8px 15px; background: rgba(233, 69, 96, 0.2); color: #e94560; border: 1px solid #e94560; border-radius: 6px; font-size: 0.8rem; font-weight: 500; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+        .card-footer { padding: 8px 12px; background: rgba(0,0,0,0.2); }
+        .btn-replace { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 6px 12px; background: rgba(233, 69, 96, 0.2); color: #e94560; border: 1px solid #e94560; border-radius: 5px; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.2s; text-decoration: none; }
         .btn-replace:hover { background: #e94560; color: #fff; }
         .btn-replace.disabled { opacity: 0.5; pointer-events: none; }
         
@@ -656,7 +668,7 @@ POST_REVIEW_HTML = """
         {% if message %}<div class="message success"><i class="fas fa-check-circle"></i> {{ message }}</div>{% endif %}
         {% if error %}<div class="message error"><i class="fas fa-exclamation-circle"></i> {{ error }}</div>{% endif %}
         
-        <!-- TODAY'S POSTS -->
+        <!-- TODAY -->
         <div class="day-section">
             <div class="date-header">
                 <i class="fas fa-calendar-day"></i>
@@ -664,68 +676,93 @@ POST_REVIEW_HTML = """
                 <span class="badge">TODAY</span>
             </div>
             
-            <div class="posts-grid">
-                <!-- Today AM -->
-                <div class="post-card">
-                    <div class="card-header am">
-                        <i class="fas fa-sun"></i>
-                        <h3>Morning Post</h3>
-                        {% if today_data.am and today_data.am.exists %}
-                        <span class="time-badge">{{ today_data.am.scheduled_time }}</span>
-                        {% endif %}
-                    </div>
-                    {% if today_data.am and today_data.am.exists %}
-                    <div class="card-body">
-                        <div class="post-content">
-                            <img src="/media/{{ today_data.am.image_filename }}" class="post-image" alt="AM Post">
-                            <div class="post-details">
-                                <div class="caption-text">{{ today_data.am.caption_preview }}</div>
-                                <span class="status-badge {{ today_data.am.status }}"><i class="fas fa-{% if today_data.am.status == 'posted' %}check-circle{% elif today_data.am.status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ today_data.am.status|capitalize }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <a href="/posts/replace/{{ today_data.date_str }}/am" class="btn-replace {% if today_data.am.status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
-                    </div>
-                    {% else %}
-                    <div class="card-body">
-                        <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No post scheduled</span></div>
-                    </div>
-                    {% endif %}
+            <!-- Today's Photos -->
+            <div class="content-section">
+                <div class="content-header photos">
+                    <i class="fas fa-image"></i>
+                    <h3>Photos</h3>
                 </div>
-                
-                <!-- Today PM -->
-                <div class="post-card">
-                    <div class="card-header pm">
-                        <i class="fas fa-moon"></i>
-                        <h3>Evening Post</h3>
-                        {% if today_data.pm and today_data.pm.exists %}
-                        <span class="time-badge">{{ today_data.pm.scheduled_time }}</span>
-                        {% endif %}
-                    </div>
-                    {% if today_data.pm and today_data.pm.exists %}
-                    <div class="card-body">
-                        <div class="post-content">
-                            <img src="/media/{{ today_data.pm.image_filename }}" class="post-image" alt="PM Post">
-                            <div class="post-details">
-                                <div class="caption-text">{{ today_data.pm.caption_preview }}</div>
-                                <span class="status-badge {{ today_data.pm.status }}"><i class="fas fa-{% if today_data.pm.status == 'posted' %}check-circle{% elif today_data.pm.status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ today_data.pm.status|capitalize }}</span>
+                <div class="posts-grid">
+                    {% for slot, label, icon in [('am', 'Morning', 'sun'), ('pm', 'Evening', 'moon')] %}
+                    <div class="post-card">
+                        <div class="card-header {{ slot }}">
+                            <i class="fas fa-{{ icon }}"></i>
+                            <h4>{{ label }}</h4>
+                            {% if today_data.photos[slot] and today_data.photos[slot].exists %}
+                            <span class="time-badge">{{ today_data.photos[slot].scheduled_time }}</span>
+                            {% endif %}
+                        </div>
+                        {% if today_data.photos[slot] and today_data.photos[slot].exists %}
+                        <div class="card-body">
+                            <div class="post-content">
+                                <img src="/media/Photos/{{ today_data.photos[slot].filename }}" class="post-image" alt="{{ slot }} Photo">
+                                <div class="post-details">
+                                    <div class="caption-text">{{ today_data.photos[slot].caption_preview }}</div>
+                                    <span class="status-badge {{ today_data.photos[slot].status }}"><i class="fas fa-{% if today_data.photos[slot].status == 'posted' %}check-circle{% elif today_data.photos[slot].status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ today_data.photos[slot].status|capitalize }}</span>
+                                </div>
                             </div>
                         </div>
+                        <div class="card-footer">
+                            <a href="/posts/replace/Photos/{{ today_data.date_str }}/{{ slot }}" class="btn-replace {% if today_data.photos[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                        </div>
+                        {% else %}
+                        <div class="card-body">
+                            <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No photo</span></div>
+                        </div>
+                        {% endif %}
                     </div>
-                    <div class="card-footer">
-                        <a href="/posts/replace/{{ today_data.date_str }}/pm" class="btn-replace {% if today_data.pm.status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Today's Stories -->
+            <div class="content-section">
+                <div class="content-header stories">
+                    <i class="fas fa-circle-notch"></i>
+                    <h3>Stories</h3>
+                </div>
+                <div class="posts-grid">
+                    {% for slot, label, icon in [('am', 'Morning', 'sun'), ('pm', 'Evening', 'moon')] %}
+                    <div class="post-card story">
+                        <div class="card-header {{ slot }}">
+                            <i class="fas fa-{{ icon }}"></i>
+                            <h4>{{ label }}</h4>
+                            {% if today_data.stories[slot] and today_data.stories[slot].exists %}
+                            <span class="time-badge">{{ today_data.stories[slot].scheduled_time }}</span>
+                            {% endif %}
+                        </div>
+                        {% if today_data.stories[slot] and today_data.stories[slot].exists %}
+                        <div class="card-body">
+                            <div class="post-content">
+                                {% if today_data.stories[slot].is_video %}
+                                <div class="video-container">
+                                    <video src="/media/Stories/{{ today_data.stories[slot].filename }}" class="post-video story" muted></video>
+                                    <i class="fas fa-play-circle play-icon"></i>
+                                </div>
+                                {% else %}
+                                <img src="/media/Stories/{{ today_data.stories[slot].filename }}" class="post-image story" alt="{{ slot }} Story">
+                                {% endif %}
+                                <div class="post-details">
+                                    <div class="caption-text">{{ today_data.stories[slot].caption_preview or '(No caption)' }}</div>
+                                    <span class="status-badge {{ today_data.stories[slot].status }}"><i class="fas fa-{% if today_data.stories[slot].status == 'posted' %}check-circle{% elif today_data.stories[slot].status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ today_data.stories[slot].status|capitalize }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <a href="/posts/replace/Stories/{{ today_data.date_str }}/{{ slot }}" class="btn-replace {% if today_data.stories[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                        </div>
+                        {% else %}
+                        <div class="card-body">
+                            <div class="post-image-placeholder"><i class="fas fa-circle-notch"></i><span>No story</span></div>
+                        </div>
+                        {% endif %}
                     </div>
-                    {% else %}
-                    <div class="card-body">
-                        <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No post scheduled</span></div>
-                    </div>
-                    {% endif %}
+                    {% endfor %}
                 </div>
             </div>
         </div>
         
-        <!-- TOMORROW'S POSTS -->
+        <!-- TOMORROW -->
         <div class="day-section">
             <div class="date-header tomorrow">
                 <i class="fas fa-calendar-alt"></i>
@@ -733,63 +770,88 @@ POST_REVIEW_HTML = """
                 <span class="badge">TOMORROW</span>
             </div>
             
-            <div class="posts-grid">
-                <!-- Tomorrow AM -->
-                <div class="post-card">
-                    <div class="card-header am">
-                        <i class="fas fa-sun"></i>
-                        <h3>Morning Post</h3>
-                        {% if tomorrow_data.am and tomorrow_data.am.exists %}
-                        <span class="time-badge">{{ tomorrow_data.am.scheduled_time }}</span>
-                        {% endif %}
-                    </div>
-                    {% if tomorrow_data.am and tomorrow_data.am.exists %}
-                    <div class="card-body">
-                        <div class="post-content">
-                            <img src="/media/{{ tomorrow_data.am.image_filename }}" class="post-image" alt="AM Post">
-                            <div class="post-details">
-                                <div class="caption-text">{{ tomorrow_data.am.caption_preview }}</div>
-                                <span class="status-badge {{ tomorrow_data.am.status }}"><i class="fas fa-{% if tomorrow_data.am.status == 'posted' %}check-circle{% elif tomorrow_data.am.status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ tomorrow_data.am.status|capitalize }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <a href="/posts/replace/{{ tomorrow_data.date_str }}/am" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
-                    </div>
-                    {% else %}
-                    <div class="card-body">
-                        <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No post scheduled</span></div>
-                    </div>
-                    {% endif %}
+            <!-- Tomorrow's Photos -->
+            <div class="content-section">
+                <div class="content-header photos">
+                    <i class="fas fa-image"></i>
+                    <h3>Photos</h3>
                 </div>
-                
-                <!-- Tomorrow PM -->
-                <div class="post-card">
-                    <div class="card-header pm">
-                        <i class="fas fa-moon"></i>
-                        <h3>Evening Post</h3>
-                        {% if tomorrow_data.pm and tomorrow_data.pm.exists %}
-                        <span class="time-badge">{{ tomorrow_data.pm.scheduled_time }}</span>
-                        {% endif %}
-                    </div>
-                    {% if tomorrow_data.pm and tomorrow_data.pm.exists %}
-                    <div class="card-body">
-                        <div class="post-content">
-                            <img src="/media/{{ tomorrow_data.pm.image_filename }}" class="post-image" alt="PM Post">
-                            <div class="post-details">
-                                <div class="caption-text">{{ tomorrow_data.pm.caption_preview }}</div>
-                                <span class="status-badge {{ tomorrow_data.pm.status }}"><i class="fas fa-{% if tomorrow_data.pm.status == 'posted' %}check-circle{% elif tomorrow_data.pm.status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ tomorrow_data.pm.status|capitalize }}</span>
+                <div class="posts-grid">
+                    {% for slot, label, icon in [('am', 'Morning', 'sun'), ('pm', 'Evening', 'moon')] %}
+                    <div class="post-card">
+                        <div class="card-header {{ slot }}">
+                            <i class="fas fa-{{ icon }}"></i>
+                            <h4>{{ label }}</h4>
+                            {% if tomorrow_data.photos[slot] and tomorrow_data.photos[slot].exists %}
+                            <span class="time-badge">{{ tomorrow_data.photos[slot].scheduled_time }}</span>
+                            {% endif %}
+                        </div>
+                        {% if tomorrow_data.photos[slot] and tomorrow_data.photos[slot].exists %}
+                        <div class="card-body">
+                            <div class="post-content">
+                                <img src="/media/Photos/{{ tomorrow_data.photos[slot].filename }}" class="post-image" alt="{{ slot }} Photo">
+                                <div class="post-details">
+                                    <div class="caption-text">{{ tomorrow_data.photos[slot].caption_preview }}</div>
+                                    <span class="status-badge {{ tomorrow_data.photos[slot].status }}"><i class="fas fa-{% if tomorrow_data.photos[slot].status == 'posted' %}check-circle{% elif tomorrow_data.photos[slot].status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ tomorrow_data.photos[slot].status|capitalize }}</span>
+                                </div>
                             </div>
                         </div>
+                        <div class="card-footer">
+                            <a href="/posts/replace/Photos/{{ tomorrow_data.date_str }}/{{ slot }}" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                        </div>
+                        {% else %}
+                        <div class="card-body">
+                            <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No photo</span></div>
+                        </div>
+                        {% endif %}
                     </div>
-                    <div class="card-footer">
-                        <a href="/posts/replace/{{ tomorrow_data.date_str }}/pm" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Tomorrow's Stories -->
+            <div class="content-section">
+                <div class="content-header stories">
+                    <i class="fas fa-circle-notch"></i>
+                    <h3>Stories</h3>
+                </div>
+                <div class="posts-grid">
+                    {% for slot, label, icon in [('am', 'Morning', 'sun'), ('pm', 'Evening', 'moon')] %}
+                    <div class="post-card story">
+                        <div class="card-header {{ slot }}">
+                            <i class="fas fa-{{ icon }}"></i>
+                            <h4>{{ label }}</h4>
+                            {% if tomorrow_data.stories[slot] and tomorrow_data.stories[slot].exists %}
+                            <span class="time-badge">{{ tomorrow_data.stories[slot].scheduled_time }}</span>
+                            {% endif %}
+                        </div>
+                        {% if tomorrow_data.stories[slot] and tomorrow_data.stories[slot].exists %}
+                        <div class="card-body">
+                            <div class="post-content">
+                                {% if tomorrow_data.stories[slot].is_video %}
+                                <div class="video-container">
+                                    <video src="/media/Stories/{{ tomorrow_data.stories[slot].filename }}" class="post-video story" muted></video>
+                                    <i class="fas fa-play-circle play-icon"></i>
+                                </div>
+                                {% else %}
+                                <img src="/media/Stories/{{ tomorrow_data.stories[slot].filename }}" class="post-image story" alt="{{ slot }} Story">
+                                {% endif %}
+                                <div class="post-details">
+                                    <div class="caption-text">{{ tomorrow_data.stories[slot].caption_preview or '(No caption)' }}</div>
+                                    <span class="status-badge {{ tomorrow_data.stories[slot].status }}"><i class="fas fa-{% if tomorrow_data.stories[slot].status == 'posted' %}check-circle{% elif tomorrow_data.stories[slot].status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ tomorrow_data.stories[slot].status|capitalize }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <a href="/posts/replace/Stories/{{ tomorrow_data.date_str }}/{{ slot }}" class="btn-replace {% if tomorrow_data.stories[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                        </div>
+                        {% else %}
+                        <div class="card-body">
+                            <div class="post-image-placeholder"><i class="fas fa-circle-notch"></i><span>No story</span></div>
+                        </div>
+                        {% endif %}
                     </div>
-                    {% else %}
-                    <div class="card-body">
-                        <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No post scheduled</span></div>
-                    </div>
-                    {% endif %}
+                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -845,24 +907,33 @@ def get_next_posting_day():
     
     return today + timedelta(days=1)
 
-def get_post_for_day(target_date):
-    """Get AM and PM post info for a specific date"""
+def get_content_for_day(target_date, content_dir, content_type):
+    """Get AM and PM content info for a specific date and content type"""
     date_str = target_date.strftime("%m_%d_%Y")
     
     result = {
-        'date': target_date,
-        'date_display': target_date.strftime("%A, %B %d"),
-        'date_str': date_str,
         'am': None,
         'pm': None
     }
     
+    video_extensions = {'.mp4', '.mov', '.avi', '.mkv', '.webm'}
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    
     for slot in ['am', 'pm']:
-        img_path = os.path.join(PHOTOS_DIR, f"{date_str}_{slot}.jpg")
-        caption_path = os.path.join(PHOTOS_DIR, f"{date_str}_{slot}.txt")
+        # Check for both image and video extensions
+        file_path = None
+        is_video = False
+        for ext in ['.jpg', '.jpeg', '.png', '.mp4', '.mov']:
+            test_path = os.path.join(content_dir, f"{date_str}_{slot}{ext}")
+            if os.path.exists(test_path):
+                file_path = test_path
+                is_video = ext.lower() in video_extensions
+                break
         
-        if os.path.exists(img_path):
+        if file_path:
+            filename = os.path.basename(file_path)
             caption = ""
+            caption_path = os.path.join(content_dir, f"{date_str}_{slot}.txt")
             if os.path.exists(caption_path):
                 try:
                     with open(caption_path, 'r', encoding='utf-8') as f:
@@ -871,19 +942,18 @@ def get_post_for_day(target_date):
                     caption = "(No caption)"
             
             # Get scheduled time and status from database
-            scheduled_time = "10:00 AM" if slot == 'am' else "3:00 PM"
+            scheduled_time = "9:00 AM" if slot == 'am' else "7:00 PM"
             post_status = "pending"
             
             try:
                 con = sqlite3.connect(DB_FILE)
-                # Look for this file in database
-                file_pattern = f"%{date_str}_{slot}.jpg"
+                file_pattern = f"%{date_str}_{slot}%"
                 row = con.execute(
-                    "SELECT scheduled_for, status FROM media_files WHERE file_path LIKE ? LIMIT 1",
-                    (file_pattern,)
+                    "SELECT scheduled_for, status FROM media_files WHERE file_path LIKE ? AND content_type = ? LIMIT 1",
+                    (file_pattern, content_type)
                 ).fetchone()
                 if row:
-                    if row[0]:  # scheduled_for timestamp
+                    if row[0]:
                         sched_dt = datetime.fromtimestamp(row[0])
                         scheduled_time = sched_dt.strftime("%I:%M %p").lstrip('0')
                     post_status = row[1] or "pending"
@@ -892,28 +962,46 @@ def get_post_for_day(target_date):
                 pass
             
             result[slot] = {
-                'image_path': img_path,
-                'image_filename': f"{date_str}_{slot}.jpg",
+                'file_path': file_path,
+                'filename': filename,
                 'caption': caption,
-                'caption_preview': caption[:150] + '...' if len(caption) > 150 else caption,
+                'caption_preview': caption[:100] + '...' if len(caption) > 100 else caption,
                 'exists': True,
+                'is_video': is_video,
                 'scheduled_time': scheduled_time,
-                'status': post_status
+                'status': post_status,
+                'content_type': content_type
             }
         else:
             result[slot] = {'exists': False}
     
     return result
 
-def get_future_posts(after_date, exclude_date_str=None, exclude_slot=None):
+def get_post_for_day(target_date):
+    """Get Photos and Stories for a specific date"""
+    date_str = target_date.strftime("%m_%d_%Y")
+    
+    result = {
+        'date': target_date,
+        'date_display': target_date.strftime("%A, %B %d"),
+        'date_str': date_str,
+        'photos': get_content_for_day(target_date, PHOTOS_DIR, 'Photos'),
+        'stories': get_content_for_day(target_date, STORIES_DIR, 'Stories'),
+    }
+    
+    return result
+
+def get_future_posts(content_type, after_date, exclude_date_str=None, exclude_slot=None):
     """Get list of all future posts for swapping"""
     future_posts = []
     
-    if not os.path.exists(PHOTOS_DIR):
+    content_dir = STORIES_DIR if content_type == 'Stories' else PHOTOS_DIR
+    
+    if not os.path.exists(content_dir):
         return future_posts
     
-    for filename in os.listdir(PHOTOS_DIR):
-        if not filename.endswith('.jpg'):
+    for filename in os.listdir(content_dir):
+        if not any(filename.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.mp4', '.mov']):
             continue
         
         file_date, slot = parse_filename_date(filename)
@@ -937,22 +1025,41 @@ def get_future_posts(after_date, exclude_date_str=None, exclude_slot=None):
     
     return future_posts
 
-def swap_posts(date1_str, slot1, date2_str, slot2):
+def swap_posts(content_type, date1_str, slot1, date2_str, slot2):
     """Swap two posts (image and caption)"""
     try:
-        img1 = os.path.join(PHOTOS_DIR, f"{date1_str}_{slot1}.jpg")
-        img2 = os.path.join(PHOTOS_DIR, f"{date2_str}_{slot2}.jpg")
-        cap1 = os.path.join(PHOTOS_DIR, f"{date1_str}_{slot1}.txt")
-        cap2 = os.path.join(PHOTOS_DIR, f"{date2_str}_{slot2}.txt")
+        content_dir = STORIES_DIR if content_type == 'Stories' else PHOTOS_DIR
         
-        temp_img = os.path.join(PHOTOS_DIR, "_temp_.jpg")
-        temp_cap = os.path.join(PHOTOS_DIR, "_temp_.txt")
+        # Find the actual files (could be different extensions)
+        img1 = img2 = None
+        for ext in ['.jpg', '.jpeg', '.png', '.mp4', '.mov']:
+            test1 = os.path.join(content_dir, f"{date1_str}_{slot1}{ext}")
+            test2 = os.path.join(content_dir, f"{date2_str}_{slot2}{ext}")
+            if os.path.exists(test1):
+                img1 = test1
+            if os.path.exists(test2):
+                img2 = test2
         
-        if os.path.exists(img1) and os.path.exists(img2):
-            shutil.move(img1, temp_img)
-            shutil.move(img2, img1)
-            shutil.move(temp_img, img2)
+        if not img1 or not img2:
+            return False, "Could not find files to swap"
         
+        ext1 = os.path.splitext(img1)[1]
+        ext2 = os.path.splitext(img2)[1]
+        
+        cap1 = os.path.join(content_dir, f"{date1_str}_{slot1}.txt")
+        cap2 = os.path.join(content_dir, f"{date2_str}_{slot2}.txt")
+        
+        temp_img = os.path.join(content_dir, f"_temp_{ext1}")
+        temp_cap = os.path.join(content_dir, "_temp_.txt")
+        
+        # Swap images (handling different extensions)
+        shutil.move(img1, temp_img)
+        new_img1 = os.path.join(content_dir, f"{date1_str}_{slot1}{ext2}")
+        new_img2 = os.path.join(content_dir, f"{date2_str}_{slot2}{ext1}")
+        shutil.move(img2, new_img1)
+        shutil.move(temp_img, new_img2)
+        
+        # Swap captions
         if os.path.exists(cap1) and os.path.exists(cap2):
             shutil.move(cap1, temp_cap)
             shutil.move(cap2, cap1)
@@ -966,18 +1073,18 @@ def swap_posts(date1_str, slot1, date2_str, slot2):
     except Exception as e:
         return False, str(e)
 
-def replace_post_random(date_str, slot):
+def replace_post_random(content_type, date_str, slot):
     """Replace a post with a random future post"""
     parts = date_str.split('_')
     target_date = datetime(int(parts[2]), int(parts[0]), int(parts[1])).date()
     
-    future_posts = get_future_posts(target_date, date_str, slot)
+    future_posts = get_future_posts(content_type, target_date, date_str, slot)
     
     if not future_posts:
-        return False, "No future posts available"
+        return False, f"No future {content_type.lower()} available"
     
     chosen = random.choice(future_posts)
-    return swap_posts(date_str, slot, chosen['date_str'], chosen['slot'])
+    return swap_posts(content_type, date_str, slot, chosen['date_str'], chosen['slot'])
 
 # =============================================================================
 # INSTAGRAM API FUNCTIONS
@@ -1377,18 +1484,21 @@ def posts_review():
         error=request.args.get('error'),
         last_swap=request.args.get('swap'))
 
-@app.route("/posts/replace/<date_str>/<slot>")
+@app.route("/posts/replace/<content_type>/<date_str>/<slot>")
 @requires_auth
-def replace_post(date_str, slot):
-    success, msg = replace_post_random(date_str, slot)
+def replace_post(content_type, date_str, slot):
+    success, msg = replace_post_random(content_type, date_str, slot)
     if success:
-        return redirect(url_for('posts_review', message=f"Replaced {slot.upper()} post!", swap=msg))
+        return redirect(url_for('posts_review', message=f"Replaced {slot.upper()} {content_type[:-1]}!", swap=msg))
     return redirect(url_for('posts_review', error=f"Failed: {msg}"))
 
-@app.route("/media/<filename>")
+@app.route("/media/<content_type>/<filename>")
 @requires_auth
-def serve_media(filename):
-    return send_from_directory(PHOTOS_DIR, filename)
+def serve_media(content_type, filename):
+    if content_type == 'Stories':
+        return send_from_directory(STORIES_DIR, filename)
+    else:
+        return send_from_directory(PHOTOS_DIR, filename)
 
 if __name__ == "__main__":
     print("Dashboard with auth on http://0.0.0.0:5000")
