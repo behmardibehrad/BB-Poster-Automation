@@ -11,7 +11,6 @@ from flask import Flask, render_template_string, request, redirect, url_for, mak
 
 PROJECT_ROOT = os.path.expanduser("~/BB-Poster-Automation")
 DB_FILE = os.path.join(PROJECT_ROOT, "poster.sqlite3")
-MEDIA_ROOT = os.path.join(PROJECT_ROOT, "media_root")
 PHOTOS_DIR = os.path.join(PROJECT_ROOT, "United_States", "Nyssa_Bloom", "Instagram", "Photos")
 FB_GRAPH_API = "https://graph.facebook.com/v21.0"
 
@@ -24,14 +23,51 @@ DASHBOARD_PASSWORD = "ThisIsaBadPassword.2025!"
 
 COOKIE_NAME = "nyssa_auth"
 COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
+TOKENS_FILE = os.path.join(PROJECT_ROOT, ".dashboard_tokens")
 
 def generate_auth_token():
     return secrets.token_hex(32)
 
-AUTH_TOKEN = generate_auth_token()
+def load_tokens():
+    """Load valid tokens from file"""
+    try:
+        if os.path.exists(TOKENS_FILE):
+            with open(TOKENS_FILE, 'r') as f:
+                tokens = set(line.strip() for line in f if line.strip())
+                return tokens
+    except:
+        pass
+    return set()
+
+def save_tokens(tokens):
+    """Save valid tokens to file"""
+    try:
+        with open(TOKENS_FILE, 'w') as f:
+            for token in tokens:
+                f.write(token + '\n')
+    except:
+        pass
+
+def add_token(token):
+    """Add a new valid token"""
+    tokens = load_tokens()
+    tokens.add(token)
+    # Keep only last 20 tokens to prevent unlimited growth
+    if len(tokens) > 20:
+        tokens = set(list(tokens)[-20:])
+    save_tokens(tokens)
+
+def remove_token(token):
+    """Remove a token (logout)"""
+    tokens = load_tokens()
+    tokens.discard(token)
+    save_tokens(tokens)
 
 def is_authenticated():
-    return request.cookies.get(COOKIE_NAME) == AUTH_TOKEN
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        return False
+    return token in load_tokens()
 
 def requires_auth(f):
     @wraps(f)
@@ -550,51 +586,59 @@ POST_REVIEW_HTML = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }
-        .container { max-width: 1200px; margin: 0 auto; }
+        .container { max-width: 1400px; margin: 0 auto; }
         h1 { text-align: center; margin-bottom: 10px; font-size: 2rem; color: #e94560; }
         .subtitle { text-align: center; color: #888; margin-bottom: 20px; font-size: 0.9rem; }
         .nav { display: flex; justify-content: center; gap: 15px; margin-bottom: 30px; flex-wrap: wrap; }
         .nav a { color: #e94560; text-decoration: none; padding: 10px 20px; border: 1px solid #e94560; border-radius: 8px; transition: all 0.2s; font-size: 0.9rem; }
         .nav a:hover, .nav a.active { background: #e94560; color: #fff; }
         
-        .date-header { background: rgba(233, 69, 96, 0.1); border: 1px solid rgba(233, 69, 96, 0.3); border-radius: 12px; padding: 15px 25px; margin-bottom: 25px; display: flex; align-items: center; justify-content: center; gap: 15px; }
-        .date-header i { color: #e94560; font-size: 1.5rem; }
-        .date-header h2 { font-size: 1.4rem; font-weight: 600; }
-        .date-header .badge { background: #e94560; color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
+        .day-section { margin-bottom: 30px; }
+        .date-header { background: rgba(233, 69, 96, 0.1); border: 1px solid rgba(233, 69, 96, 0.3); border-radius: 12px; padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 12px; }
+        .date-header.tomorrow { background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.3); }
+        .date-header i { color: #e94560; font-size: 1.2rem; }
+        .date-header.tomorrow i { color: #8b5cf6; }
+        .date-header h2 { font-size: 1.2rem; font-weight: 600; }
+        .date-header .badge { background: #e94560; color: #fff; padding: 3px 10px; border-radius: 15px; font-size: 0.7rem; font-weight: bold; margin-left: auto; }
+        .date-header.tomorrow .badge { background: #8b5cf6; }
         
-        .posts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px; }
+        .posts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
         @media (max-width: 900px) { .posts-grid { grid-template-columns: 1fr; } }
         
-        .post-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; overflow: hidden; }
-        .card-header { background: rgba(255,255,255,0.03); padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; }
-        .card-header.am { border-left: 4px solid #fbbf24; }
-        .card-header.pm { border-left: 4px solid #8b5cf6; }
+        .post-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; overflow: hidden; }
+        .card-header { background: rgba(255,255,255,0.03); padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px; }
+        .card-header.am { border-left: 3px solid #fbbf24; }
+        .card-header.pm { border-left: 3px solid #8b5cf6; }
         .card-header.am i { color: #fbbf24; }
         .card-header.pm i { color: #8b5cf6; }
-        .card-header h3 { font-size: 1rem; font-weight: 600; flex: 1; }
-        .time-badge { background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; color: #888; }
+        .card-header h3 { font-size: 0.9rem; font-weight: 600; flex: 1; }
+        .time-badge { background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 5px; font-size: 0.7rem; color: #4ade80; font-weight: 600; }
         
-        .card-body { padding: 20px; }
-        .post-content { display: flex; gap: 20px; }
+        .card-body { padding: 15px; }
+        .post-content { display: flex; gap: 15px; }
         @media (max-width: 600px) { .post-content { flex-direction: column; } }
         
-        .post-image { width: 180px; height: 180px; border-radius: 12px; object-fit: cover; background: #222; flex-shrink: 0; }
-        .post-image-placeholder { width: 180px; height: 180px; border-radius: 12px; background: linear-gradient(135deg, #2a2a4a 0%, #1a1a3a 100%); display: flex; align-items: center; justify-content: center; flex-direction: column; color: #666; flex-shrink: 0; }
-        .post-image-placeholder i { font-size: 3rem; margin-bottom: 10px; }
+        .post-image { width: 140px; height: 140px; border-radius: 10px; object-fit: cover; background: #222; flex-shrink: 0; }
+        .post-image-placeholder { width: 140px; height: 140px; border-radius: 10px; background: linear-gradient(135deg, #2a2a4a 0%, #1a1a3a 100%); display: flex; align-items: center; justify-content: center; flex-direction: column; color: #666; flex-shrink: 0; font-size: 0.8rem; }
+        .post-image-placeholder i { font-size: 2rem; margin-bottom: 8px; }
         
         .post-details { flex: 1; min-width: 0; }
-        .caption-text { color: #ccc; font-size: 0.85rem; line-height: 1.6; margin-bottom: 15px; max-height: 100px; overflow-y: auto; }
-        .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 500; background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+        .caption-text { color: #ccc; font-size: 0.8rem; line-height: 1.5; margin-bottom: 10px; max-height: 80px; overflow-y: auto; }
+        .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 15px; font-size: 0.75rem; font-weight: 500; }
+        .status-badge.pending { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+        .status-badge.posted { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+        .status-badge.failed { background: rgba(248, 113, 113, 0.15); color: #f87171; }
         
-        .card-footer { padding: 15px 20px; background: rgba(0,0,0,0.2); }
-        .btn-replace { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px 20px; background: rgba(233, 69, 96, 0.2); color: #e94560; border: 1px solid #e94560; border-radius: 8px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+        .card-footer { padding: 10px 15px; background: rgba(0,0,0,0.2); }
+        .btn-replace { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 8px 15px; background: rgba(233, 69, 96, 0.2); color: #e94560; border: 1px solid #e94560; border-radius: 6px; font-size: 0.8rem; font-weight: 500; cursor: pointer; transition: all 0.2s; text-decoration: none; }
         .btn-replace:hover { background: #e94560; color: #fff; }
+        .btn-replace.disabled { opacity: 0.5; pointer-events: none; }
         
-        .message { padding: 15px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .message { padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
         .message.success { background: rgba(74, 222, 128, 0.15); border: 1px solid rgba(74, 222, 128, 0.3); color: #4ade80; }
         .message.error { background: rgba(248, 113, 113, 0.15); border: 1px solid rgba(248, 113, 113, 0.3); color: #f87171; }
         
-        .swap-info { background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.3); color: #a78bfa; padding: 10px 15px; border-radius: 8px; font-size: 0.85rem; margin-top: 10px; text-align: center; }
+        .swap-info { background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.3); color: #a78bfa; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; margin-top: 15px; text-align: center; }
     </style>
 </head>
 <body>
@@ -612,65 +656,141 @@ POST_REVIEW_HTML = """
         {% if message %}<div class="message success"><i class="fas fa-check-circle"></i> {{ message }}</div>{% endif %}
         {% if error %}<div class="message error"><i class="fas fa-exclamation-circle"></i> {{ error }}</div>{% endif %}
         
-        <div class="date-header">
-            <i class="fas fa-calendar-alt"></i>
-            <h2>{{ post_data.date_display }}</h2>
-            {% if is_today %}<span class="badge">TODAY</span>{% elif is_tomorrow %}<span class="badge">TOMORROW</span>{% endif %}
-        </div>
-        
-        <div class="posts-grid">
-            <!-- AM Post -->
-            <div class="post-card">
-                <div class="card-header am">
-                    <i class="fas fa-sun"></i>
-                    <h3>Morning Post</h3>
-                    <span class="time-badge">10:00 AM</span>
-                </div>
-                {% if post_data.am and post_data.am.exists %}
-                <div class="card-body">
-                    <div class="post-content">
-                        <img src="/media/{{ post_data.am.image_filename }}" class="post-image" alt="AM Post">
-                        <div class="post-details">
-                            <div class="caption-text">{{ post_data.am.caption_preview }}</div>
-                            <span class="status-badge"><i class="fas fa-check-circle"></i> Ready</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-footer">
-                    <a href="/posts/replace/{{ post_data.date_str }}/am" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
-                </div>
-                {% else %}
-                <div class="card-body">
-                    <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No morning post</span></div>
-                </div>
-                {% endif %}
+        <!-- TODAY'S POSTS -->
+        <div class="day-section">
+            <div class="date-header">
+                <i class="fas fa-calendar-day"></i>
+                <h2>{{ today_data.date_display }}</h2>
+                <span class="badge">TODAY</span>
             </div>
             
-            <!-- PM Post -->
-            <div class="post-card">
-                <div class="card-header pm">
-                    <i class="fas fa-moon"></i>
-                    <h3>Evening Post</h3>
-                    <span class="time-badge">3:00 PM</span>
-                </div>
-                {% if post_data.pm and post_data.pm.exists %}
-                <div class="card-body">
-                    <div class="post-content">
-                        <img src="/media/{{ post_data.pm.image_filename }}" class="post-image" alt="PM Post">
-                        <div class="post-details">
-                            <div class="caption-text">{{ post_data.pm.caption_preview }}</div>
-                            <span class="status-badge"><i class="fas fa-check-circle"></i> Ready</span>
+            <div class="posts-grid">
+                <!-- Today AM -->
+                <div class="post-card">
+                    <div class="card-header am">
+                        <i class="fas fa-sun"></i>
+                        <h3>Morning Post</h3>
+                        {% if today_data.am and today_data.am.exists %}
+                        <span class="time-badge">{{ today_data.am.scheduled_time }}</span>
+                        {% endif %}
+                    </div>
+                    {% if today_data.am and today_data.am.exists %}
+                    <div class="card-body">
+                        <div class="post-content">
+                            <img src="/media/{{ today_data.am.image_filename }}" class="post-image" alt="AM Post">
+                            <div class="post-details">
+                                <div class="caption-text">{{ today_data.am.caption_preview }}</div>
+                                <span class="status-badge {{ today_data.am.status }}"><i class="fas fa-{% if today_data.am.status == 'posted' %}check-circle{% elif today_data.am.status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ today_data.am.status|capitalize }}</span>
+                            </div>
                         </div>
                     </div>
+                    <div class="card-footer">
+                        <a href="/posts/replace/{{ today_data.date_str }}/am" class="btn-replace {% if today_data.am.status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                    </div>
+                    {% else %}
+                    <div class="card-body">
+                        <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No post scheduled</span></div>
+                    </div>
+                    {% endif %}
                 </div>
-                <div class="card-footer">
-                    <a href="/posts/replace/{{ post_data.date_str }}/pm" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                
+                <!-- Today PM -->
+                <div class="post-card">
+                    <div class="card-header pm">
+                        <i class="fas fa-moon"></i>
+                        <h3>Evening Post</h3>
+                        {% if today_data.pm and today_data.pm.exists %}
+                        <span class="time-badge">{{ today_data.pm.scheduled_time }}</span>
+                        {% endif %}
+                    </div>
+                    {% if today_data.pm and today_data.pm.exists %}
+                    <div class="card-body">
+                        <div class="post-content">
+                            <img src="/media/{{ today_data.pm.image_filename }}" class="post-image" alt="PM Post">
+                            <div class="post-details">
+                                <div class="caption-text">{{ today_data.pm.caption_preview }}</div>
+                                <span class="status-badge {{ today_data.pm.status }}"><i class="fas fa-{% if today_data.pm.status == 'posted' %}check-circle{% elif today_data.pm.status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ today_data.pm.status|capitalize }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <a href="/posts/replace/{{ today_data.date_str }}/pm" class="btn-replace {% if today_data.pm.status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                    </div>
+                    {% else %}
+                    <div class="card-body">
+                        <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No post scheduled</span></div>
+                    </div>
+                    {% endif %}
                 </div>
-                {% else %}
-                <div class="card-body">
-                    <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No evening post</span></div>
+            </div>
+        </div>
+        
+        <!-- TOMORROW'S POSTS -->
+        <div class="day-section">
+            <div class="date-header tomorrow">
+                <i class="fas fa-calendar-alt"></i>
+                <h2>{{ tomorrow_data.date_display }}</h2>
+                <span class="badge">TOMORROW</span>
+            </div>
+            
+            <div class="posts-grid">
+                <!-- Tomorrow AM -->
+                <div class="post-card">
+                    <div class="card-header am">
+                        <i class="fas fa-sun"></i>
+                        <h3>Morning Post</h3>
+                        {% if tomorrow_data.am and tomorrow_data.am.exists %}
+                        <span class="time-badge">{{ tomorrow_data.am.scheduled_time }}</span>
+                        {% endif %}
+                    </div>
+                    {% if tomorrow_data.am and tomorrow_data.am.exists %}
+                    <div class="card-body">
+                        <div class="post-content">
+                            <img src="/media/{{ tomorrow_data.am.image_filename }}" class="post-image" alt="AM Post">
+                            <div class="post-details">
+                                <div class="caption-text">{{ tomorrow_data.am.caption_preview }}</div>
+                                <span class="status-badge {{ tomorrow_data.am.status }}"><i class="fas fa-{% if tomorrow_data.am.status == 'posted' %}check-circle{% elif tomorrow_data.am.status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ tomorrow_data.am.status|capitalize }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <a href="/posts/replace/{{ tomorrow_data.date_str }}/am" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                    </div>
+                    {% else %}
+                    <div class="card-body">
+                        <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No post scheduled</span></div>
+                    </div>
+                    {% endif %}
                 </div>
-                {% endif %}
+                
+                <!-- Tomorrow PM -->
+                <div class="post-card">
+                    <div class="card-header pm">
+                        <i class="fas fa-moon"></i>
+                        <h3>Evening Post</h3>
+                        {% if tomorrow_data.pm and tomorrow_data.pm.exists %}
+                        <span class="time-badge">{{ tomorrow_data.pm.scheduled_time }}</span>
+                        {% endif %}
+                    </div>
+                    {% if tomorrow_data.pm and tomorrow_data.pm.exists %}
+                    <div class="card-body">
+                        <div class="post-content">
+                            <img src="/media/{{ tomorrow_data.pm.image_filename }}" class="post-image" alt="PM Post">
+                            <div class="post-details">
+                                <div class="caption-text">{{ tomorrow_data.pm.caption_preview }}</div>
+                                <span class="status-badge {{ tomorrow_data.pm.status }}"><i class="fas fa-{% if tomorrow_data.pm.status == 'posted' %}check-circle{% elif tomorrow_data.pm.status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ tomorrow_data.pm.status|capitalize }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <a href="/posts/replace/{{ tomorrow_data.date_str }}/pm" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                    </div>
+                    {% else %}
+                    <div class="card-body">
+                        <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No post scheduled</span></div>
+                    </div>
+                    {% endif %}
+                </div>
             </div>
         </div>
         
@@ -713,7 +833,7 @@ def get_next_posting_day():
                 try:
                     con = sqlite3.connect(DB_FILE)
                     today_start = datetime.combine(today, datetime.min.time())
-                    cur = con.execute("SELECT COUNT(*) FROM posts WHERE posted_at >= ? AND status = 'posted'", 
+                    cur = con.execute("SELECT COUNT(*) FROM media_files WHERE posted_at >= ? AND status = 'posted'", 
                                      (int(today_start.timestamp()),))
                     posted_today = cur.fetchone()[0]
                     con.close()
@@ -731,7 +851,7 @@ def get_post_for_day(target_date):
     
     result = {
         'date': target_date,
-        'date_display': target_date.strftime("%B %d, %Y"),
+        'date_display': target_date.strftime("%A, %B %d"),
         'date_str': date_str,
         'am': None,
         'pm': None
@@ -750,12 +870,35 @@ def get_post_for_day(target_date):
                 except:
                     caption = "(No caption)"
             
+            # Get scheduled time and status from database
+            scheduled_time = "10:00 AM" if slot == 'am' else "3:00 PM"
+            post_status = "pending"
+            
+            try:
+                con = sqlite3.connect(DB_FILE)
+                # Look for this file in database
+                file_pattern = f"%{date_str}_{slot}.jpg"
+                row = con.execute(
+                    "SELECT scheduled_for, status FROM media_files WHERE file_path LIKE ? LIMIT 1",
+                    (file_pattern,)
+                ).fetchone()
+                if row:
+                    if row[0]:  # scheduled_for timestamp
+                        sched_dt = datetime.fromtimestamp(row[0])
+                        scheduled_time = sched_dt.strftime("%I:%M %p").lstrip('0')
+                    post_status = row[1] or "pending"
+                con.close()
+            except:
+                pass
+            
             result[slot] = {
                 'image_path': img_path,
                 'image_filename': f"{date_str}_{slot}.jpg",
                 'caption': caption,
                 'caption_preview': caption[:150] + '...' if len(caption) > 150 else caption,
-                'exists': True
+                'exists': True,
+                'scheduled_time': scheduled_time,
+                'status': post_status
             }
         else:
             result[slot] = {'exists': False}
@@ -1098,20 +1241,23 @@ def mark_reply_sent(reply_id, nyssa_comment_id=None):
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    global AUTH_TOKEN
     error = None
     if request.method == "POST":
         if request.form.get("password") == DASHBOARD_PASSWORD:
-            AUTH_TOKEN = generate_auth_token()
+            new_token = generate_auth_token()
+            add_token(new_token)
             resp = make_response(redirect(url_for("dashboard")))
             max_age = COOKIE_MAX_AGE if request.form.get("remember") else None
-            resp.set_cookie(COOKIE_NAME, AUTH_TOKEN, max_age=max_age, httponly=True, samesite='Lax')
+            resp.set_cookie(COOKIE_NAME, new_token, max_age=max_age, httponly=True, samesite='Lax')
             return resp
         error = "Invalid password"
     return render_template_string(LOGIN_HTML, error=error)
 
 @app.route("/logout")
 def logout():
+    token = request.cookies.get(COOKIE_NAME)
+    if token:
+        remove_token(token)
     resp = make_response(redirect(url_for("login")))
     resp.delete_cookie(COOKIE_NAME)
     return resp
@@ -1218,14 +1364,15 @@ def api_stats():
 @app.route("/posts")
 @requires_auth
 def posts_review():
-    next_day = get_next_posting_day()
-    post_data = get_post_for_day(next_day)
     today = datetime.now().date()
+    tomorrow = today + timedelta(days=1)
+    
+    today_data = get_post_for_day(today)
+    tomorrow_data = get_post_for_day(tomorrow)
     
     return render_template_string(POST_REVIEW_HTML,
-        post_data=post_data,
-        is_today=(next_day == today),
-        is_tomorrow=(next_day == today + timedelta(days=1)),
+        today_data=today_data,
+        tomorrow_data=tomorrow_data,
         message=request.args.get('message'),
         error=request.args.get('error'),
         last_swap=request.args.get('swap'))
