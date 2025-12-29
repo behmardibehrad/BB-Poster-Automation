@@ -19,33 +19,34 @@ MEDIA_ROOT = os.path.join(PROJECT_ROOT, "media_root")
 MEDIA_SERVER_SCRIPT = os.path.join(PROJECT_ROOT, "media_server.py")
 
 # -----------------------------------------------------------------------------
-# Posting Schedule (24-hour format) - RANDOMIZED TIME RANGES
-# Files named like: 12_26_2025_am.jpg or 12_26_2025_pm.mp4
+# Posting Schedule (24-hour format) - 2025 OPTIMAL TIME WINDOWS
+# Based on 2025 data: Twice/day ? 9 AM + 7 PM peaks
 #
-# Each slot now has a range: ("start_time", "end_time")
-# The scanner will pick a random time within this range.
+# Files named like: 12_26_2025_am.jpg or 12_26_2025_pm.mp4
+# Each slot has a range: ("start_time", "end_time")
+# The scanner picks a random time within this range.
 # -----------------------------------------------------------------------------
 
 POSTING_SCHEDULE = {
     "Photos": {
-        "am": ("09:00", "11:30"),   # Random between 9:00 AM - 11:30 AM
-        "pm": ("14:30", "17:00"),   # Random between 2:30 PM - 5:00 PM
+        "am": ("08:00", "10:00"),   # 8:00 AM - 10:00 AM (peak ~9 AM)
+        "pm": ("18:00", "20:00"),   # 6:00 PM - 8:00 PM (peak ~7 PM)
     },
     "Feeds": {
-        "am": ("09:00", "11:30"),
-        "pm": ("14:30", "17:00"),
+        "am": ("08:00", "10:00"),
+        "pm": ("18:00", "20:00"),
     },
     "Videos": {
-        "am": ("10:00", "12:30"),   # 1 hour offset from photos
-        "pm": ("15:30", "18:00"),
+        "am": ("08:30", "10:30"),   # 30 min offset from photos
+        "pm": ("18:30", "20:30"),
     },
     "Reels": {
-        "am": ("10:00", "12:30"),
-        "pm": ("15:30", "18:00"),
+        "am": ("08:30", "10:30"),
+        "pm": ("18:30", "20:30"),
     },
     "Stories": {
-        "am": ("09:30", "12:00"),
-        "pm": ("15:00", "17:30"),
+        "am": ("08:15", "10:15"),
+        "pm": ("18:15", "20:15"),
     },
 }
 
@@ -171,8 +172,9 @@ if __name__ == "__main__":
     print(f"  - {LOG_DIR}/config_test.log")
     print(f"  - {LOG_DIR}/all.log")
     
-    print("\n--- Posting Schedule (Randomized Ranges) ---")
+    print("\n--- 2025 Optimal Posting Schedule ---")
+    print("Based on: Twice/day ? 9 AM + 7 PM peaks\n")
     for content_type, slots in POSTING_SCHEDULE.items():
-        print(f"\n{content_type}:")
+        print(f"{content_type}:")
         for slot, time_range in slots.items():
             print(f"  {slot.upper()}: {time_range[0]} - {time_range[1]}")
