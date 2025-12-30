@@ -932,16 +932,9 @@ def get_content_for_day(target_date, content_dir, content_type):
         
         if file_path:
             filename = os.path.basename(file_path)
-            caption = ""
-            caption_path = os.path.join(content_dir, f"{date_str}_{slot}.txt")
-            if os.path.exists(caption_path):
-                try:
-                    with open(caption_path, 'r', encoding='utf-8') as f:
-                        caption = f.read().strip()
-                except:
-                    caption = "(No caption)"
             
-            # Get scheduled time and status from database
+            # Get caption, scheduled time and status from DATABASE (same source as poster!)
+            caption = ""
             scheduled_time = "9:00 AM" if slot == 'am' else "7:00 PM"
             post_status = "pending"
             
@@ -949,7 +942,7 @@ def get_content_for_day(target_date, content_dir, content_type):
                 con = sqlite3.connect(DB_FILE)
                 file_pattern = f"%{date_str}_{slot}%"
                 row = con.execute(
-                    "SELECT scheduled_for, status FROM media_files WHERE file_path LIKE ? AND content_type = ? LIMIT 1",
+                    "SELECT scheduled_for, status, caption FROM media_files WHERE file_path LIKE ? AND content_type = ? LIMIT 1",
                     (file_pattern, content_type)
                 ).fetchone()
                 if row:
@@ -957,9 +950,20 @@ def get_content_for_day(target_date, content_dir, content_type):
                         sched_dt = datetime.fromtimestamp(row[0])
                         scheduled_time = sched_dt.strftime("%I:%M %p").lstrip('0')
                     post_status = row[1] or "pending"
+                    caption = row[2] or ""
                 con.close()
             except:
                 pass
+            
+            # Fallback: if no caption in DB, read from file
+            if not caption:
+                caption_path = os.path.join(content_dir, f"{date_str}_{slot}.txt")
+                if os.path.exists(caption_path):
+                    try:
+                        with open(caption_path, 'r', encoding='utf-8') as f:
+                            caption = f.read().strip()
+                    except:
+                        caption = "(No caption)"
             
             result[slot] = {
                 'file_path': file_path,
