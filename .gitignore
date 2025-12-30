@@ -2,6 +2,8 @@
 United_States/
 United_Kingdom/
 backups/
+Reels_Audio/
+
 # Database files
 *.sqlite3
 
