@@ -634,17 +634,41 @@ POST_REVIEW_HTML = """
         .post-image-placeholder { width: 100px; height: 100px; border-radius: 8px; background: linear-gradient(135deg, #2a2a4a 0%, #1a1a3a 100%); display: flex; align-items: center; justify-content: center; flex-direction: column; color: #555; flex-shrink: 0; font-size: 0.7rem; }
         .post-image-placeholder i { font-size: 1.5rem; margin-bottom: 5px; }
         
-        .post-details { flex: 1; min-width: 0; }
-        .caption-text { color: #aaa; font-size: 0.75rem; line-height: 1.4; margin-bottom: 8px; max-height: 50px; overflow: hidden; }
+        .post-details { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+        .caption-container { flex: 1; margin-bottom: 8px; }
+        .caption-text { color: #ccc; font-size: 0.8rem; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+        .caption-text.collapsed { max-height: 60px; overflow: hidden; position: relative; }
+        .caption-text.collapsed::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 20px; background: linear-gradient(transparent, rgba(26, 26, 46, 0.9)); }
+        .expand-btn { color: #e94560; font-size: 0.7rem; cursor: pointer; margin-top: 4px; display: inline-block; }
+        .expand-btn:hover { text-decoration: underline; }
         .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 500; }
         .status-badge.pending { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
         .status-badge.posted { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
         .status-badge.failed { background: rgba(248, 113, 113, 0.15); color: #f87171; }
         
-        .card-footer { padding: 8px 12px; background: rgba(0,0,0,0.2); }
-        .btn-replace { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 6px 12px; background: rgba(233, 69, 96, 0.2); color: #e94560; border: 1px solid #e94560; border-radius: 5px; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+        .card-footer { padding: 8px 12px; background: rgba(0,0,0,0.2); display: flex; gap: 8px; }
+        .btn-action { display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1; padding: 6px 12px; border-radius: 5px; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.2s; text-decoration: none; border: none; }
+        .btn-replace { background: rgba(233, 69, 96, 0.2); color: #e94560; border: 1px solid #e94560; }
         .btn-replace:hover { background: #e94560; color: #fff; }
-        .btn-replace.disabled { opacity: 0.5; pointer-events: none; }
+        .btn-edit { background: rgba(96, 165, 250, 0.2); color: #60a5fa; border: 1px solid #60a5fa; }
+        .btn-edit:hover { background: #60a5fa; color: #fff; }
+        .btn-action.disabled { opacity: 0.5; pointer-events: none; }
+        
+        /* Edit Caption Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: #1a1a2e; border-radius: 15px; padding: 25px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1); }
+        .modal h3 { color: #e94560; margin-bottom: 15px; font-size: 1.2rem; }
+        .modal-image { width: 100%; max-width: 200px; border-radius: 10px; margin-bottom: 15px; }
+        .modal textarea { width: 100%; min-height: 150px; padding: 15px; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; background: rgba(255,255,255,0.05); color: #fff; font-size: 0.95rem; font-family: inherit; resize: vertical; margin-bottom: 15px; }
+        .modal textarea:focus { outline: none; border-color: #e94560; }
+        .modal-actions { display: flex; gap: 10px; }
+        .modal .btn { padding: 12px 24px; border-radius: 8px; font-size: 0.9rem; cursor: pointer; border: none; transition: all 0.2s; }
+        .modal .btn-save { background: #4ade80; color: #000; }
+        .modal .btn-save:hover { background: #22c55e; }
+        .modal .btn-cancel { background: rgba(255,255,255,0.1); color: #888; }
+        .modal .btn-cancel:hover { background: rgba(255,255,255,0.2); color: #fff; }
+        .modal-info { font-size: 0.8rem; color: #888; margin-bottom: 15px; }
         
         .message { padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
         .message.success { background: rgba(74, 222, 128, 0.15); border: 1px solid rgba(74, 222, 128, 0.3); color: #4ade80; }
@@ -697,13 +721,19 @@ POST_REVIEW_HTML = """
                             <div class="post-content">
                                 <img src="/media/Photos/{{ today_data.photos[slot].filename }}" class="post-image" alt="{{ slot }} Photo">
                                 <div class="post-details">
-                                    <div class="caption-text">{{ today_data.photos[slot].caption_preview }}</div>
+                                    <div class="caption-container">
+                                        <div class="caption-text collapsed" id="caption-today-photos-{{ slot }}">{{ today_data.photos[slot].caption }}</div>
+                                        {% if today_data.photos[slot].caption|length > 100 %}
+                                        <span class="expand-btn" data-target="caption-today-photos-{{ slot }}">Show more</span>
+                                        {% endif %}
+                                    </div>
                                     <span class="status-badge {{ today_data.photos[slot].status }}"><i class="fas fa-{% if today_data.photos[slot].status == 'posted' %}check-circle{% elif today_data.photos[slot].status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ today_data.photos[slot].status|capitalize }}</span>
                                 </div>
                             </div>
                         </div>
                         <div class="card-footer">
-                            <a href="/posts/replace/Photos/{{ today_data.date_str }}/{{ slot }}" class="btn-replace {% if today_data.photos[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                            <a href="/posts/replace/Photos/{{ today_data.date_str }}/{{ slot }}" class="btn-action btn-replace {% if today_data.photos[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                            <button class="btn-action btn-edit {% if today_data.photos[slot].status == 'posted' %}disabled{% endif %}" data-content-type="Photos" data-date-str="{{ today_data.date_str }}" data-slot="{{ slot }}" data-filename="{{ today_data.photos[slot].filename }}" data-caption-id="caption-today-photos-{{ slot }}"><i class="fas fa-edit"></i> Edit</button>
                         </div>
                         {% else %}
                         <div class="card-body">
@@ -749,7 +779,7 @@ POST_REVIEW_HTML = """
                             </div>
                         </div>
                         <div class="card-footer">
-                            <a href="/posts/replace/Stories/{{ today_data.date_str }}/{{ slot }}" class="btn-replace {% if today_data.stories[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                            <a href="/posts/replace/Stories/{{ today_data.date_str }}/{{ slot }}" class="btn-action btn-replace {% if today_data.stories[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
                         </div>
                         {% else %}
                         <div class="card-body">
@@ -791,13 +821,19 @@ POST_REVIEW_HTML = """
                             <div class="post-content">
                                 <img src="/media/Photos/{{ tomorrow_data.photos[slot].filename }}" class="post-image" alt="{{ slot }} Photo">
                                 <div class="post-details">
-                                    <div class="caption-text">{{ tomorrow_data.photos[slot].caption_preview }}</div>
+                                    <div class="caption-container">
+                                        <div class="caption-text collapsed" id="caption-tomorrow-photos-{{ slot }}">{{ tomorrow_data.photos[slot].caption }}</div>
+                                        {% if tomorrow_data.photos[slot].caption|length > 100 %}
+                                        <span class="expand-btn" data-target="caption-tomorrow-photos-{{ slot }}">Show more</span>
+                                        {% endif %}
+                                    </div>
                                     <span class="status-badge {{ tomorrow_data.photos[slot].status }}"><i class="fas fa-{% if tomorrow_data.photos[slot].status == 'posted' %}check-circle{% elif tomorrow_data.photos[slot].status == 'failed' %}times-circle{% else %}clock{% endif %}"></i> {{ tomorrow_data.photos[slot].status|capitalize }}</span>
                                 </div>
                             </div>
                         </div>
                         <div class="card-footer">
-                            <a href="/posts/replace/Photos/{{ tomorrow_data.date_str }}/{{ slot }}" class="btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                            <a href="/posts/replace/Photos/{{ tomorrow_data.date_str }}/{{ slot }}" class="btn-action btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
+                            <button class="btn-action btn-edit" data-content-type="Photos" data-date-str="{{ tomorrow_data.date_str }}" data-slot="{{ slot }}" data-filename="{{ tomorrow_data.photos[slot].filename }}" data-caption-id="caption-tomorrow-photos-{{ slot }}"><i class="fas fa-edit"></i> Edit</button>
                         </div>
                         {% else %}
                         <div class="card-body">
@@ -843,7 +879,7 @@ POST_REVIEW_HTML = """
                             </div>
                         </div>
                         <div class="card-footer">
-                            <a href="/posts/replace/Stories/{{ tomorrow_data.date_str }}/{{ slot }}" class="btn-replace {% if tomorrow_data.stories[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
+                            <a href="/posts/replace/Stories/{{ tomorrow_data.date_str }}/{{ slot }}" class="btn-action btn-replace {% if tomorrow_data.stories[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
                         </div>
                         {% else %}
                         <div class="card-body">
@@ -858,6 +894,78 @@ POST_REVIEW_HTML = """
         
         {% if last_swap %}<div class="swap-info"><i class="fas fa-info-circle"></i> {{ last_swap }}</div>{% endif %}
     </div>
+    
+    <!-- Edit Caption Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <h3><i class="fas fa-edit"></i> Edit Caption</h3>
+            <img id="modalImage" class="modal-image" src="" alt="Post preview">
+            <div class="modal-info">
+                <i class="fas fa-info-circle"></i> Edit the caption below. Changes will update both the database and the .txt file.
+            </div>
+            <form action="/posts/edit-caption" method="POST">
+                <input type="hidden" name="content_type" id="modalContentType">
+                <input type="hidden" name="date_str" id="modalDateStr">
+                <input type="hidden" name="slot" id="modalSlot">
+                <textarea name="caption" id="modalCaption" placeholder="Enter caption..."></textarea>
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-save"><i class="fas fa-save"></i> Save Caption</button>
+                    <button type="button" class="btn btn-cancel" onclick="closeEditModal()"><i class="fas fa-times"></i> Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        // Expand/collapse captions
+        document.querySelectorAll('.expand-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var targetId = this.getAttribute('data-target');
+                var el = document.getElementById(targetId);
+                if (el.classList.contains('collapsed')) {
+                    el.classList.remove('collapsed');
+                    this.textContent = 'Show less';
+                } else {
+                    el.classList.add('collapsed');
+                    this.textContent = 'Show more';
+                }
+            });
+        });
+        
+        // Edit buttons
+        document.querySelectorAll('.btn-edit').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var contentType = this.getAttribute('data-content-type');
+                var dateStr = this.getAttribute('data-date-str');
+                var slot = this.getAttribute('data-slot');
+                var filename = this.getAttribute('data-filename');
+                var captionId = this.getAttribute('data-caption-id');
+                var captionEl = document.getElementById(captionId);
+                var caption = captionEl ? captionEl.textContent : '';
+                
+                document.getElementById('modalContentType').value = contentType;
+                document.getElementById('modalDateStr').value = dateStr;
+                document.getElementById('modalSlot').value = slot;
+                document.getElementById('modalCaption').value = caption;
+                document.getElementById('modalImage').src = '/media/' + contentType + '/' + filename;
+                document.getElementById('editModal').classList.add('active');
+            });
+        });
+        
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('active');
+        }
+        
+        // Close modal on click outside
+        document.getElementById('editModal').addEventListener('click', function(e) {
+            if (e.target === this) closeEditModal();
+        });
+        
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeEditModal();
+        });
+    </script>
 </body>
 </html>
 """
@@ -1089,6 +1197,31 @@ def replace_post_random(content_type, date_str, slot):
     
     chosen = random.choice(future_posts)
     return swap_posts(content_type, date_str, slot, chosen['date_str'], chosen['slot'])
+
+def update_caption(content_type, date_str, slot, new_caption):
+    """Update caption in both database and .txt file"""
+    try:
+        # Determine content directory
+        content_dir = STORIES_DIR if content_type == 'Stories' else PHOTOS_DIR
+        
+        # Update .txt file
+        caption_path = os.path.join(content_dir, f"{date_str}_{slot}.txt")
+        with open(caption_path, 'w', encoding='utf-8') as f:
+            f.write(new_caption)
+        
+        # Update database
+        con = sqlite3.connect(DB_FILE)
+        file_pattern = f"%{date_str}_{slot}%"
+        con.execute(
+            "UPDATE media_files SET caption = ? WHERE file_path LIKE ? AND content_type = ?",
+            (new_caption, file_pattern, content_type)
+        )
+        con.commit()
+        con.close()
+        
+        return True, "Caption updated successfully"
+    except Exception as e:
+        return False, str(e)
 
 # =============================================================================
 # INSTAGRAM API FUNCTIONS
@@ -1495,6 +1628,22 @@ def replace_post(content_type, date_str, slot):
     if success:
         return redirect(url_for('posts_review', message=f"Replaced {slot.upper()} {content_type[:-1]}!", swap=msg))
     return redirect(url_for('posts_review', error=f"Failed: {msg}"))
+
+@app.route("/posts/edit-caption", methods=["POST"])
+@requires_auth
+def edit_caption():
+    content_type = request.form.get("content_type")
+    date_str = request.form.get("date_str")
+    slot = request.form.get("slot")
+    new_caption = request.form.get("caption", "").strip()
+    
+    if not all([content_type, date_str, slot, new_caption]):
+        return redirect(url_for('posts_review', error="Missing required fields"))
+    
+    success, msg = update_caption(content_type, date_str, slot, new_caption)
+    if success:
+        return redirect(url_for('posts_review', message=f"Caption updated for {date_str} {slot.upper()}!"))
+    return redirect(url_for('posts_review', error=f"Failed to update caption: {msg}"))
 
 @app.route("/media/<content_type>/<filename>")
 @requires_auth

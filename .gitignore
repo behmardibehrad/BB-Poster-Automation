@@ -3,7 +3,7 @@ United_States/
 United_Kingdom/
 backups/
 Reels_Audio/
-
+__pycache__/
 # Database files
 *.sqlite3
 
