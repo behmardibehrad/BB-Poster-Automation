@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Poster worker for BB-Poster-Automation.
-Pulls pending jobs from the queue and posts to Facebook/Instagram APIs.
+Pulls pending jobs from the queue and posts to Facebook/Instagram/Twitter APIs.
 """
 
 import os
@@ -12,6 +12,13 @@ import subprocess
 import requests
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
+
+# Twitter support
+try:
+    import tweepy
+    TWEEPY_AVAILABLE = True
+except ImportError:
+    TWEEPY_AVAILABLE = False
 
 import db
 from config import (
@@ -497,6 +504,84 @@ def post_fb_reel(
 
 
 # -----------------------------------------------------------------------------
+# Twitter API Functions
+# -----------------------------------------------------------------------------
+
+def post_twitter_image(
+    api_key: str,
+    api_secret: str,
+    access_token: str,
+    access_secret: str,
+    image_path: str,
+    caption: Optional[str] = None
+) -> Tuple[bool, str, str]:
+    """
+    Post an image to Twitter using Tweepy.
+    
+    Args:
+        api_key: Twitter API Key (Consumer Key)
+        api_secret: Twitter API Secret (Consumer Secret)
+        access_token: Twitter Access Token
+        access_secret: Twitter Access Token Secret
+        image_path: Local path to the image file
+        caption: Tweet text (max 280 chars for text, but images allow more)
+    
+    Returns:
+        Tuple of (success, tweet_id, error_message)
+    """
+    if not TWEEPY_AVAILABLE:
+        return False, "", "tweepy module not installed. Run: pip install tweepy --break-system-packages"
+    
+    try:
+        # Authenticate with Twitter API v1.1 for media upload
+        auth = tweepy.OAuth1UserHandler(
+            api_key, api_secret,
+            access_token, access_secret
+        )
+        api_v1 = tweepy.API(auth)
+        
+        # Authenticate with Twitter API v2 for posting
+        client = tweepy.Client(
+            consumer_key=api_key,
+            consumer_secret=api_secret,
+            access_token=access_token,
+            access_token_secret=access_secret
+        )
+        
+        # Upload media using v1.1 API
+        logger.debug(f"Uploading media: {image_path}")
+        media = api_v1.media_upload(filename=image_path)
+        media_id = media.media_id
+        logger.debug(f"Media uploaded, ID: {media_id}")
+        
+        # Post tweet with media using v2 API
+        tweet_text = caption if caption else ""
+        
+        # Twitter limit is 280 chars for text, but with images it's more flexible
+        # Truncate if needed
+        if len(tweet_text) > 280:
+            tweet_text = tweet_text[:277] + "..."
+        
+        response = client.create_tweet(
+            text=tweet_text,
+            media_ids=[media_id]
+        )
+        
+        tweet_id = str(response.data['id'])
+        logger.info(f"Posted tweet: {tweet_id}")
+        return True, tweet_id, ""
+        
+    except tweepy.TweepyException as e:
+        error_msg = str(e)
+        logger.error(f"Twitter API error: {error_msg}")
+        return False, "", error_msg
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Twitter posting error: {error_msg}")
+        return False, "", error_msg
+
+
+# -----------------------------------------------------------------------------
 # Main Posting Logic
 # -----------------------------------------------------------------------------
 
@@ -517,6 +602,37 @@ def post_job(job: Dict[str, Any]) -> Tuple[bool, str, str]:
     if not creds:
         return False, "", f"No credentials for {job['country']}/{job['model_name']}/{job['platform']}"
     
+    platform = job["platform"]
+    content_type = job["content_type"]
+    caption = job.get("caption")
+    is_video = is_video_file(job["file_path"])
+    
+    # Twitter uses different credential fields and posts locally (no media URL needed)
+    if platform == "Twitter":
+        twitter_api_key = creds.get("twitter_api_key")
+        twitter_api_secret = creds.get("twitter_api_secret")
+        twitter_access_token = creds.get("twitter_access_token")
+        twitter_access_secret = creds.get("twitter_access_secret")
+        
+        if not all([twitter_api_key, twitter_api_secret, twitter_access_token, twitter_access_secret]):
+            return False, "", "Missing Twitter credentials (need api_key, api_secret, access_token, access_secret)"
+        
+        # Twitter posts directly from local file
+        local_path = os.path.join(PROJECT_ROOT, job["file_path"])
+        if not os.path.isfile(local_path):
+            return False, "", f"File not found: {local_path}"
+        
+        if is_video:
+            return False, "", "Twitter video posting not yet implemented"
+        
+        success, post_id, error = post_twitter_image(
+            twitter_api_key, twitter_api_secret,
+            twitter_access_token, twitter_access_secret,
+            local_path, caption=caption
+        )
+        return success, post_id, error
+    
+    # Instagram/Facebook use access_token and media URLs
     access_token = creds.get("access_token")
     if not access_token:
         return False, "", "No access token in credentials"
@@ -530,11 +646,6 @@ def post_job(job: Dict[str, Any]) -> Tuple[bool, str, str]:
     
     media_url = get_public_media_url(token)
     logger.info(f"Media URL: {media_url}")
-    
-    platform = job["platform"]
-    content_type = job["content_type"]
-    caption = job.get("caption")
-    is_video = is_video_file(job["file_path"])
     
     try:
         if platform == "Instagram":

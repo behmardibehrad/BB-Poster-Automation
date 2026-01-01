@@ -39,7 +39,7 @@ MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 CONTENT_TYPE_FOLDERS = {"Feeds", "Photos", "Reels", "Stories", "Videos"}
 
 # Platform folders
-PLATFORM_FOLDERS = {"FB_Page", "FB_Account", "Instagram"}
+PLATFORM_FOLDERS = {"FB_Page", "FB_Account", "Instagram", "Twitter"}
 
 # Files/folders to ignore
 IGNORE_PATTERNS = {

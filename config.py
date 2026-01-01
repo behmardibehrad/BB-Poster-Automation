@@ -83,6 +83,11 @@ RATE_LIMITS = {
         "Stories": 10,
         "Videos": 5,
     },
+    "Twitter": {
+        "Photos": 4,      # Conservative - Twitter allows more but let's be safe
+        "Feeds": 4,
+        "Videos": 2,
+    },
 }
 
 # -----------------------------------------------------------------------------
