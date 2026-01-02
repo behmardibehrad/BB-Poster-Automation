@@ -13,7 +13,15 @@ PROJECT_ROOT = os.path.expanduser("~/BB-Poster-Automation")
 DB_FILE = os.path.join(PROJECT_ROOT, "poster.sqlite3")
 PHOTOS_DIR = os.path.join(PROJECT_ROOT, "United_States", "Nyssa_Bloom", "Instagram", "Photos")
 STORIES_DIR = os.path.join(PROJECT_ROOT, "United_States", "Nyssa_Bloom", "Instagram", "Stories")
+TWITTER_PHOTOS_DIR = os.path.join(PROJECT_ROOT, "United_States", "Nyssa_Bloom", "Twitter", "Photos")
 FB_GRAPH_API = "https://graph.facebook.com/v21.0"
+
+# Twitter support
+try:
+    import tweepy
+    TWEEPY_AVAILABLE = True
+except ImportError:
+    TWEEPY_AVAILABLE = False
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
@@ -230,7 +238,7 @@ DASHBOARD_HTML = """
         </div>
         
         <div class="grid">
-            <div class="card" style="grid-column: span 2;">
+            <div class="card">
                 <h2><i class="fab fa-instagram"></i> Instagram Profile</h2>
                 {% if profile %}
                 <div class="profile-card">
@@ -238,7 +246,7 @@ DASHBOARD_HTML = """
                     <div class="profile-info">
                         <div class="profile-name">{{ profile.name }}</div>
                         <div class="profile-username">@{{ profile.username }}</div>
-                        <div class="profile-bio">{{ profile.bio }}</div>
+                        <div class="profile-bio" style="font-size: 0.75rem; max-height: 60px; overflow: hidden;">{{ profile.bio }}</div>
                     </div>
                 </div>
                 <div class="profile-stats">
@@ -247,6 +255,24 @@ DASHBOARD_HTML = """
                     <div class="profile-stat"><div class="profile-stat-num">{{ profile.posts }}</div><div class="profile-stat-label">Posts</div></div>
                 </div>
                 {% else %}<div class="error-note">Could not load Instagram profile</div>{% endif %}
+            </div>
+            <div class="card">
+                <h2><i class="fab fa-x-twitter"></i> Twitter/X Profile</h2>
+                {% if twitter_profile %}
+                <div class="profile-card">
+                    <img src="{{ twitter_profile.avatar }}" alt="Profile" class="profile-avatar" style="border-color: #1da1f2;" onerror="this.style.display='none'">
+                    <div class="profile-info">
+                        <div class="profile-name">{{ twitter_profile.name }}</div>
+                        <div class="profile-username" style="color: #1da1f2;">@{{ twitter_profile.username }}</div>
+                        <div class="profile-bio" style="font-size: 0.75rem; max-height: 60px; overflow: hidden;">{{ twitter_profile.bio }}</div>
+                    </div>
+                </div>
+                <div class="profile-stats">
+                    <div class="profile-stat"><div class="profile-stat-num">{{ twitter_profile.followers }}</div><div class="profile-stat-label">Followers</div></div>
+                    <div class="profile-stat"><div class="profile-stat-num">{{ twitter_profile.following }}</div><div class="profile-stat-label">Following</div></div>
+                    <div class="profile-stat"><div class="profile-stat-num">{{ twitter_profile.posts }}</div><div class="profile-stat-label">Posts</div></div>
+                </div>
+                {% else %}<div class="error-note">Could not load Twitter profile</div>{% endif %}
             </div>
             <div class="card">
                 <h2><i class="fas fa-chart-pie"></i> Engagement</h2>
@@ -281,6 +307,16 @@ DASHBOARD_HTML = """
                     <div><div class="big-number status-pending">{{ posts_pending }}</div><div class="big-label">Pending</div></div>
                     <div><div class="big-number status-error">{{ posts_failed }}</div><div class="big-label">Failed</div></div>
                 </div>
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 8px;">
+                        <span style="color: #888;"><i class="fab fa-instagram" style="color: #e94560;"></i> Instagram</span>
+                        <span><span class="status-ok">{{ ig_today }}</span> / <span class="status-pending">{{ ig_pending }}</span> / <span class="status-error">{{ ig_failed }}</span></span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                        <span style="color: #888;"><i class="fab fa-x-twitter" style="color: #1da1f2;"></i> Twitter/X</span>
+                        <span><span class="status-ok">{{ twitter_today }}</span> / <span class="status-pending">{{ twitter_pending }}</span> / <span class="status-error">{{ twitter_failed }}</span></span>
+                    </div>
+                </div>
             </div>
             <div class="card">
                 <h2><i class="fas fa-comments"></i> Comment Responder</h2>
@@ -309,6 +345,30 @@ DASHBOARD_HTML = """
                     {% endfor %}
                 </div>
                 {% else %}<div class="error-note">No posts found</div>{% endif %}
+            </div>
+        </div>
+        <div class="grid">
+            <div class="card card-full">
+                <h2><i class="fab fa-x-twitter"></i> Recent Twitter Posts</h2>
+                {% if twitter_posts %}
+                <div class="posts-grid">
+                    {% for tweet in twitter_posts %}
+                    <a href="{{ tweet.permalink }}" target="_blank" style="text-decoration: none; color: inherit;">
+                        <div class="post-card">
+                            {% if tweet.thumbnail %}<img src="{{ tweet.thumbnail }}" alt="Tweet" class="post-image">{% else %}<div class="post-image-placeholder" style="font-size: 0.8rem; padding: 10px; text-align: left; align-items: flex-start;">{{ tweet.text }}</div>{% endif %}
+                            <div class="post-stats">
+                                <div style="display: flex; gap: 12px;">
+                                    <div class="post-stat"><i class="fas fa-heart"></i> {{ tweet.likes }}</div>
+                                    <div class="post-stat"><i class="fas fa-retweet"></i> {{ tweet.retweets }}</div>
+                                    <div class="post-stat"><i class="fas fa-reply"></i> {{ tweet.replies }}</div>
+                                </div>
+                                <span class="post-type" style="background: rgba(29, 161, 242, 0.2); color: #1da1f2;">TWEET</span>
+                            </div>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}<div class="error-note">No tweets found or Twitter API not configured</div>{% endif %}
             </div>
         </div>
         <div class="grid">
@@ -1259,6 +1319,179 @@ def get_instagram_posts(limit=8):
         return posts
     except: return []
 
+# =============================================================================
+# TWITTER API FUNCTIONS (with caching to avoid rate limits)
+# =============================================================================
+
+# Twitter cache - stores data in memory and file to survive restarts
+TWITTER_CACHE_FILE = os.path.join(PROJECT_ROOT, ".twitter_cache.json")
+TWITTER_CACHE_TTL = 21600  # 15 minutes - Twitter free tier limit
+_twitter_cache = {"profile": None, "tweets": None, "profile_time": 0, "tweets_time": 0}
+
+def load_twitter_cache():
+    """Load Twitter cache from file"""
+    global _twitter_cache
+    try:
+        if os.path.exists(TWITTER_CACHE_FILE):
+            with open(TWITTER_CACHE_FILE, 'r') as f:
+                _twitter_cache = json.load(f)
+    except:
+        pass
+
+def save_twitter_cache():
+    """Save Twitter cache to file"""
+    try:
+        with open(TWITTER_CACHE_FILE, 'w') as f:
+            json.dump(_twitter_cache, f)
+    except:
+        pass
+
+# Load cache on startup
+load_twitter_cache()
+
+def get_twitter_credentials():
+    """Get Twitter API credentials from database"""
+    try:
+        con = sqlite3.connect(DB_FILE)
+        row = con.execute("""
+            SELECT twitter_api_key, twitter_api_secret, twitter_access_token, twitter_access_secret 
+            FROM credentials WHERE platform = 'Twitter' AND is_active = 1 LIMIT 1
+        """).fetchone()
+        con.close()
+        if row and all(row):
+            return {'api_key': row[0], 'api_secret': row[1], 'access_token': row[2], 'access_secret': row[3]}
+    except:
+        pass
+    return None
+
+def get_twitter_profile():
+    """Get Twitter profile information using tweepy (with caching)"""
+    global _twitter_cache
+    
+    # Check cache first
+    now = datetime.now().timestamp()
+    if _twitter_cache.get("profile") and (now - _twitter_cache.get("profile_time", 0)) < TWITTER_CACHE_TTL:
+        return _twitter_cache["profile"]
+    
+    if not TWEEPY_AVAILABLE:
+        return _twitter_cache.get("profile")  # Return stale cache if available
+    creds = get_twitter_credentials()
+    if not creds:
+        return _twitter_cache.get("profile")
+    
+    try:
+        client = tweepy.Client(
+            consumer_key=creds['api_key'],
+            consumer_secret=creds['api_secret'],
+            access_token=creds['access_token'],
+            access_token_secret=creds['access_secret']
+        )
+        # Get authenticated user info
+        user = client.get_me(user_fields=['profile_image_url', 'description', 'public_metrics', 'username', 'name'])
+        if user and user.data:
+            u = user.data
+            metrics = u.public_metrics or {}
+            profile = {
+                'username': u.username or 'N/A',
+                'name': u.name or 'N/A',
+                'bio': u.description or '',
+                'followers': metrics.get('followers_count', 0),
+                'following': metrics.get('following_count', 0),
+                'posts': metrics.get('tweet_count', 0),
+                'avatar': (u.profile_image_url or '').replace('_normal', '_400x400')
+            }
+            # Update cache
+            _twitter_cache["profile"] = profile
+            _twitter_cache["profile_time"] = now
+            save_twitter_cache()
+            return profile
+    except Exception as e:
+        print(f"Twitter profile error: {e}")
+        # Return stale cache on error
+        if _twitter_cache.get("profile"):
+            return _twitter_cache["profile"]
+    return None
+
+def get_twitter_recent_tweets(limit=8):
+    """Get recent tweets from the authenticated user (with caching)"""
+    global _twitter_cache
+    
+    # Check cache first
+    now = datetime.now().timestamp()
+    if _twitter_cache.get("tweets") and (now - _twitter_cache.get("tweets_time", 0)) < TWITTER_CACHE_TTL:
+        return _twitter_cache["tweets"]
+    
+    if not TWEEPY_AVAILABLE:
+        return _twitter_cache.get("tweets", [])
+    creds = get_twitter_credentials()
+    if not creds:
+        return _twitter_cache.get("tweets", [])
+    
+    try:
+        client = tweepy.Client(
+            consumer_key=creds['api_key'],
+            consumer_secret=creds['api_secret'],
+            access_token=creds['access_token'],
+            access_token_secret=creds['access_secret']
+        )
+        # Get user ID first
+        user = client.get_me()
+        if not user or not user.data:
+            return _twitter_cache.get("tweets", [])
+        user_id = user.data.id
+        
+        # Get recent tweets with metrics
+        tweets = client.get_users_tweets(
+            user_id, 
+            max_results=min(limit, 100),
+            tweet_fields=['created_at', 'public_metrics', 'attachments'],
+            media_fields=['preview_image_url', 'url'],
+            expansions=['attachments.media_keys']
+        )
+        
+        if not tweets or not tweets.data:
+            return _twitter_cache.get("tweets", [])
+        
+        # Build media lookup
+        media_lookup = {}
+        if tweets.includes and 'media' in tweets.includes:
+            for m in tweets.includes['media']:
+                media_lookup[m.media_key] = m.url or m.preview_image_url or ''
+        
+        result = []
+        for tweet in tweets.data:
+            metrics = tweet.public_metrics or {}
+            # Get first media URL if available
+            thumbnail = ''
+            if tweet.attachments and 'media_keys' in tweet.attachments:
+                for mk in tweet.attachments['media_keys']:
+                    if mk in media_lookup:
+                        thumbnail = media_lookup[mk]
+                        break
+            
+            result.append({
+                'id': str(tweet.id),  # Convert to string for JSON
+                'text': tweet.text[:100] + '...' if len(tweet.text) > 100 else tweet.text,
+                'likes': metrics.get('like_count', 0),
+                'retweets': metrics.get('retweet_count', 0),
+                'replies': metrics.get('reply_count', 0),
+                'permalink': f"https://twitter.com/i/status/{tweet.id}",
+                'thumbnail': thumbnail
+            })
+        
+        # Update cache
+        _twitter_cache["tweets"] = result
+        _twitter_cache["tweets_time"] = now
+        save_twitter_cache()
+        return result
+    except Exception as e:
+        print(f"Twitter tweets error: {e}")
+        # Return stale cache on error
+        if _twitter_cache.get("tweets"):
+            return _twitter_cache["tweets"]
+    return []
+
+
 def calculate_engagement(posts, followers):
     if not posts or followers == 0: return None
     total_likes, total_comments = sum(p['likes'] for p in posts), sum(p['comments'] for p in posts)
@@ -1329,12 +1562,20 @@ def get_service_status():
     return result
 
 def get_post_stats():
-    stats = {"posts_today": 0, "posts_pending": 0, "posts_failed": 0, "photos_24h": 0, "stories_24h": 0, "total_queued": 0, "posts_week": 0}
+    stats = {
+        "posts_today": 0, "posts_pending": 0, "posts_failed": 0, 
+        "photos_24h": 0, "stories_24h": 0, "total_queued": 0, "posts_week": 0,
+        # Platform breakdown
+        "ig_today": 0, "ig_pending": 0, "ig_failed": 0,
+        "twitter_today": 0, "twitter_pending": 0, "twitter_failed": 0
+    }
     try:
         con = sqlite3.connect(DB_FILE)
         now = int(datetime.now().timestamp())
         day_ago, week_ago = now - 86400, now - 604800
         today_start = int(datetime.now().replace(hour=0, minute=0, second=0).timestamp())
+        
+        # Overall stats
         stats["posts_today"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ?", (today_start,)).fetchone()[0]
         stats["posts_pending"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'pending'").fetchone()[0]
         stats["posts_failed"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'failed'").fetchone()[0]
@@ -1342,6 +1583,17 @@ def get_post_stats():
         stats["stories_24h"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ? AND content_type = 'Stories'", (day_ago,)).fetchone()[0]
         stats["total_queued"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status IN ('pending', 'posting')").fetchone()[0]
         stats["posts_week"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ?", (week_ago,)).fetchone()[0]
+        
+        # Instagram breakdown
+        stats["ig_today"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ? AND platform = 'Instagram'", (today_start,)).fetchone()[0]
+        stats["ig_pending"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'pending' AND platform = 'Instagram'").fetchone()[0]
+        stats["ig_failed"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'failed' AND platform = 'Instagram'").fetchone()[0]
+        
+        # Twitter breakdown
+        stats["twitter_today"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'posted' AND posted_at >= ? AND platform = 'Twitter'", (today_start,)).fetchone()[0]
+        stats["twitter_pending"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'pending' AND platform = 'Twitter'").fetchone()[0]
+        stats["twitter_failed"] = con.execute("SELECT COUNT(*) FROM media_files WHERE status = 'failed' AND platform = 'Twitter'").fetchone()[0]
+        
         con.close()
     except Exception as e:
         print(f"Error: {e}")
@@ -1515,6 +1767,11 @@ def dashboard():
     comment_history, total_comments, history_stats = get_comment_history(30)
     post_stats, comment_stats = get_post_stats(), get_comment_stats()
     pending_count = get_pending_count()
+    
+    # Twitter data
+    twitter_profile = get_twitter_profile()
+    twitter_posts = get_twitter_recent_tweets(8)
+    
     return render_template_string(DASHBOARD_HTML, 
         current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         profile=profile, ig_posts=ig_posts, engagement=engagement, services=get_service_status(),
@@ -1527,7 +1784,12 @@ def dashboard():
         comment_history=comment_history, total_comments=total_comments,
         stats_sent=history_stats["sent"], stats_pending=history_stats["pending"],
         stats_skipped=history_stats["skipped"], stats_failed=history_stats.get("failed", 0) + history_stats.get("rejected", 0),
-        pending_count=pending_count)
+        pending_count=pending_count,
+        # Twitter data
+        twitter_profile=twitter_profile, twitter_posts=twitter_posts,
+        ig_today=post_stats["ig_today"], ig_pending=post_stats["ig_pending"], ig_failed=post_stats["ig_failed"],
+        twitter_today=post_stats["twitter_today"], twitter_pending=post_stats["twitter_pending"], twitter_failed=post_stats["twitter_failed"]
+    )
 
 @app.route("/approve")
 @requires_auth
