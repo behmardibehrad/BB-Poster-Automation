@@ -197,11 +197,18 @@ def wait_for_ig_container(
     container_id: str,
     access_token: str,
     timeout: int = CONTAINER_STATUS_TIMEOUT,
+    min_wait: float = 2.0,
 ) -> Tuple[bool, str]:
     """Wait for an Instagram media container to be ready for publishing."""
     start = time.time()
+    check_count = 0
+    
+    # Always wait a minimum time before first check - Instagram needs time to process
+    logger.info(f"Waiting {min_wait}s before first status check...")
+    time.sleep(min_wait)
     
     while time.time() - start < timeout:
+        check_count += 1
         success, result = api_request(
             "GET", container_id,
             access_token,
@@ -209,20 +216,34 @@ def wait_for_ig_container(
         )
         
         if not success:
-            return False, result.get("error", {}).get("message", "Unknown error")
+            error_msg = result.get("error", {}).get("message", "Unknown error")
+            logger.warning(f"Container status check #{check_count} failed: {error_msg}")
+            # Don't fail immediately on status check error - retry
+            time.sleep(CONTAINER_STATUS_INTERVAL)
+            continue
         
         status_code = result.get("status_code")
-        logger.debug(f"Container {container_id} status: {status_code}")
+        status_msg = result.get("status", "")
+        logger.info(f"Container {container_id} status #{check_count}: {status_code} ({status_msg})")
         
         if status_code == "FINISHED":
+            logger.info(f"Container ready after {check_count} check(s), {time.time() - start:.1f}s")
             return True, "FINISHED"
         elif status_code == "ERROR":
-            return False, result.get("status", "Container error")
-        elif status_code in ("IN_PROGRESS", "PUBLISHED"):
+            error_detail = result.get("status", "Container processing error")
+            logger.error(f"Container failed: {error_detail}")
+            return False, error_detail
+        elif status_code in ("IN_PROGRESS", "PUBLISHED", None, ""):
+            # IN_PROGRESS = still processing
+            # PUBLISHED = already published (shouldn't happen but handle it)
+            # None/"" = status not yet available, treat as in progress
             time.sleep(CONTAINER_STATUS_INTERVAL)
         else:
+            # Unknown status - log and wait
+            logger.warning(f"Unknown container status: {status_code}, waiting...")
             time.sleep(CONTAINER_STATUS_INTERVAL)
     
+    logger.error(f"Container timeout after {check_count} checks, {timeout}s")
     return False, "Timeout waiting for container"
 
 
@@ -235,6 +256,8 @@ def post_instagram_image(
     access_token: str,
     image_url: str,
     caption: Optional[str] = None,
+    publish_retries: int = 3,
+    publish_retry_delay: float = 5.0,
 ) -> Tuple[bool, str, str]:
     """Post an image to Instagram feed."""
     params = {"image_url": image_url}
@@ -262,19 +285,38 @@ def post_instagram_image(
     if not ready:
         return False, container_id, f"Container not ready: {status}"
     
-    success, result = api_request(
-        "POST", f"{ig_user_id}/media_publish",
-        access_token,
-        params={"creation_id": container_id},
-    )
+    # Publish with retry logic - Instagram sometimes says "not ready" even after FINISHED status
+    last_error = ""
+    for attempt in range(1, publish_retries + 1):
+        success, result = api_request(
+            "POST", f"{ig_user_id}/media_publish",
+            access_token,
+            params={"creation_id": container_id},
+        )
+        
+        if success:
+            post_id = result.get("id")
+            logger.info(f"Published IG image: {post_id}")
+            return True, post_id, ""
+        
+        last_error = result.get("error", {}).get("message", "Failed to publish")
+        error_subcode = result.get("error", {}).get("error_subcode")
+        
+        # Check if it's a "not ready" error that might resolve with retry
+        is_not_ready = (
+            "not ready" in last_error.lower() or 
+            "not available" in last_error.lower() or
+            error_subcode == 2207027  # Instagram's "not ready" subcode
+        )
+        
+        if is_not_ready and attempt < publish_retries:
+            logger.warning(f"Publish attempt {attempt}/{publish_retries} failed (not ready), retrying in {publish_retry_delay}s...")
+            time.sleep(publish_retry_delay)
+        else:
+            # Either not a retriable error or last attempt
+            break
     
-    if not success:
-        error = result.get("error", {}).get("message", "Failed to publish")
-        return False, container_id, error
-    
-    post_id = result.get("id")
-    logger.info(f"Published IG image: {post_id}")
-    return True, post_id, ""
+    return False, container_id, last_error
 
 
 def post_instagram_video(
@@ -283,6 +325,8 @@ def post_instagram_video(
     video_url: str,
     caption: Optional[str] = None,
     media_type: str = "VIDEO",
+    publish_retries: int = 3,
+    publish_retry_delay: float = 5.0,
 ) -> Tuple[bool, str, str]:
     """Post a video to Instagram (Feed, Reels, or Stories)."""
     params = {
@@ -315,19 +359,36 @@ def post_instagram_video(
     if not ready:
         return False, container_id, f"Container not ready: {status}"
     
-    success, result = api_request(
-        "POST", f"{ig_user_id}/media_publish",
-        access_token,
-        params={"creation_id": container_id},
-    )
+    # Publish with retry logic
+    last_error = ""
+    for attempt in range(1, publish_retries + 1):
+        success, result = api_request(
+            "POST", f"{ig_user_id}/media_publish",
+            access_token,
+            params={"creation_id": container_id},
+        )
+        
+        if success:
+            post_id = result.get("id")
+            logger.info(f"Published IG {media_type}: {post_id}")
+            return True, post_id, ""
+        
+        last_error = result.get("error", {}).get("message", "Failed to publish")
+        error_subcode = result.get("error", {}).get("error_subcode")
+        
+        is_not_ready = (
+            "not ready" in last_error.lower() or 
+            "not available" in last_error.lower() or
+            error_subcode == 2207027
+        )
+        
+        if is_not_ready and attempt < publish_retries:
+            logger.warning(f"Publish attempt {attempt}/{publish_retries} failed (not ready), retrying in {publish_retry_delay}s...")
+            time.sleep(publish_retry_delay)
+        else:
+            break
     
-    if not success:
-        error = result.get("error", {}).get("message", "Failed to publish")
-        return False, container_id, error
-    
-    post_id = result.get("id")
-    logger.info(f"Published IG {media_type}: {post_id}")
-    return True, post_id, ""
+    return False, container_id, last_error
 
 
 def post_instagram_story(
@@ -335,6 +396,8 @@ def post_instagram_story(
     access_token: str,
     media_url: str,
     is_video: bool = False,
+    publish_retries: int = 3,
+    publish_retry_delay: float = 5.0,
 ) -> Tuple[bool, str, str]:
     """Post a story to Instagram."""
     if is_video:
@@ -369,19 +432,36 @@ def post_instagram_story(
         if not ready:
             return False, container_id, f"Container not ready: {status}"
         
-        success, result = api_request(
-            "POST", f"{ig_user_id}/media_publish",
-            access_token,
-            params={"creation_id": container_id},
-        )
+        # Publish with retry logic
+        last_error = ""
+        for attempt in range(1, publish_retries + 1):
+            success, result = api_request(
+                "POST", f"{ig_user_id}/media_publish",
+                access_token,
+                params={"creation_id": container_id},
+            )
+            
+            if success:
+                post_id = result.get("id")
+                logger.info(f"Published IG STORIES: {post_id}")
+                return True, post_id, ""
+            
+            last_error = result.get("error", {}).get("message", "Failed to publish")
+            error_subcode = result.get("error", {}).get("error_subcode")
+            
+            is_not_ready = (
+                "not ready" in last_error.lower() or 
+                "not available" in last_error.lower() or
+                error_subcode == 2207027
+            )
+            
+            if is_not_ready and attempt < publish_retries:
+                logger.warning(f"Publish attempt {attempt}/{publish_retries} failed (not ready), retrying in {publish_retry_delay}s...")
+                time.sleep(publish_retry_delay)
+            else:
+                break
         
-        if not success:
-            error = result.get("error", {}).get("message", "Failed to publish")
-            return False, container_id, error
-        
-        post_id = result.get("id")
-        logger.info(f"Published IG STORIES: {post_id}")
-        return True, post_id, ""
+        return False, container_id, last_error
 
 
 # -----------------------------------------------------------------------------
