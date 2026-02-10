@@ -26,9 +26,10 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
 
-# ============== CHANGE THIS PASSWORD ==============
-DASHBOARD_PASSWORD = "ThisIsaBadPassword.2025!" 
-# ==================================================
+# ============== CHANGE THESE PASSWORDS ==============
+ADMIN_PASSWORD = "ThisIsaBadPassword.2025!"
+GUEST_PASSWORD = "NyssaGuest2025"  # Share this with guests (read-only access)
+# ====================================================
 
 COOKIE_NAME = "nyssa_auth"
 COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
@@ -38,39 +39,56 @@ def generate_auth_token():
     return secrets.token_hex(32)
 
 def load_tokens():
-    """Load valid tokens from file"""
+    """Load valid tokens from file - returns dict of token: role"""
     try:
         if os.path.exists(TOKENS_FILE):
             with open(TOKENS_FILE, 'r') as f:
-                tokens = set(line.strip() for line in f if line.strip())
+                tokens = {}
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        parts = line.split(':')
+                        if len(parts) == 2:
+                            tokens[parts[0]] = parts[1]  # token: role
+                        else:
+                            tokens[line] = 'admin'  # legacy tokens default to admin
                 return tokens
     except:
         pass
-    return set()
+    return {}
 
 def save_tokens(tokens):
-    """Save valid tokens to file"""
+    """Save valid tokens to file - tokens is dict of token: role"""
     try:
         with open(TOKENS_FILE, 'w') as f:
-            for token in tokens:
-                f.write(token + '\n')
+            for token, role in tokens.items():
+                f.write(f"{token}:{role}\n")
     except:
         pass
 
-def add_token(token):
-    """Add a new valid token"""
+def add_token(token, role='admin'):
+    """Add a new valid token with role"""
     tokens = load_tokens()
-    tokens.add(token)
+    tokens[token] = role
     # Keep only last 20 tokens to prevent unlimited growth
     if len(tokens) > 20:
-        tokens = set(list(tokens)[-20:])
+        items = list(tokens.items())[-20:]
+        tokens = dict(items)
     save_tokens(tokens)
 
 def remove_token(token):
     """Remove a token (logout)"""
     tokens = load_tokens()
-    tokens.discard(token)
+    tokens.pop(token, None)
     save_tokens(tokens)
+
+def get_user_role():
+    """Get the role of the current user (admin or guest)"""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        return None
+    tokens = load_tokens()
+    return tokens.get(token)
 
 def is_authenticated():
     token = request.cookies.get(COOKIE_NAME)
@@ -78,11 +96,26 @@ def is_authenticated():
         return False
     return token in load_tokens()
 
+def is_admin():
+    """Check if current user is admin"""
+    return get_user_role() == 'admin'
+
 def requires_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not is_authenticated():
             return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+def requires_admin(f):
+    """Decorator for admin-only routes"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not is_authenticated():
+            return redirect(url_for('login'))
+        if not is_admin():
+            return redirect(url_for('dashboard', error='Admin access required'))
         return f(*args, **kwargs)
     return decorated
 
@@ -228,7 +261,7 @@ DASHBOARD_HTML = """
     <a href="/logout" class="logout-btn">Logout</a>
     <div class="container">
         <h1><i class="fas fa-camera-retro"></i> Nyssa Bloom Dashboard</h1>
-        <p class="subtitle">Last updated: {{ current_time }}</p>
+        <p class="subtitle">Last updated: {{ current_time }} | {% if user_role == 'admin' %}<span style="background: #4ade80; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;"><i class="fas fa-crown"></i> Admin</span>{% else %}<span style="background: #60a5fa; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;"><i class="fas fa-eye"></i> Guest (Read-Only)</span>{% endif %}</p>
         
         <div class="nav">
             <a href="/" class="active"><i class="fas fa-chart-line"></i> Dashboard</a>
@@ -514,14 +547,20 @@ APPROVE_HTML = """
                 <form action="/approve/update/{{ reply.id }}" method="POST">
                     <div class="reply-section">
                         <div class="reply-label">Nyssa's Response <span>AI Generated</span></div>
-                        <textarea name="reply_text" class="reply-textarea">{{ reply.reply }}</textarea>
+                        <textarea name="reply_text" class="reply-textarea" {% if user_role != 'admin' %}disabled{% endif %}>{{ reply.reply }}</textarea>
                     </div>
                     
+                    {% if user_role == 'admin' %}
                     <div class="actions">
                         <button type="submit" name="action" value="approve" class="btn btn-approve"><i class="fas fa-check"></i> Approve & Send Now</button>
                         <button type="submit" name="action" value="edit" class="btn btn-edit"><i class="fas fa-save"></i> Save Edit</button>
                         <button type="submit" name="action" value="reject" class="btn btn-reject"><i class="fas fa-times"></i> Reject</button>
                     </div>
+                    {% else %}
+                    <div class="actions">
+                        <span style="color: #888; font-size: 0.9rem;"><i class="fas fa-lock"></i> View-only access - admin required for actions</span>
+                    </div>
+                    {% endif %}
                 </form>
             </div>
             {% endfor %}
@@ -618,6 +657,7 @@ MODERATION_HTML = """
                 </div>
                 <div class="comment-text">"{{ comment.text }}"</div>
                 <div class="comment-post">On post: <a href="{{ comment.post_url }}" target="_blank">{{ comment.post_caption }}</a></div>
+                {% if user_role == 'admin' %}
                 <div class="comment-actions">
                     {% if comment.hidden %}
                     <a href="/moderation/unhide/{{ comment.id }}" class="btn btn-unhide"><i class="fas fa-eye"></i> Unhide</a>
@@ -626,6 +666,11 @@ MODERATION_HTML = """
                     {% endif %}
                     <a href="/moderation/delete/{{ comment.id }}" class="btn btn-delete" onclick="return confirm('Delete this comment permanently?')"><i class="fas fa-trash"></i> Delete</a>
                 </div>
+                {% else %}
+                <div class="comment-actions">
+                    <span style="color: #888; font-size: 0.85rem;"><i class="fas fa-lock"></i> View-only</span>
+                </div>
+                {% endif %}
             </div>
             {% endfor %}
         {% else %}
@@ -791,10 +836,12 @@ POST_REVIEW_HTML = """
                                 </div>
                             </div>
                         </div>
+                        {% if user_role == 'admin' %}
                         <div class="card-footer">
                             <a href="/posts/replace/Photos/{{ today_data.date_str }}/{{ slot }}" class="btn-action btn-replace {% if today_data.photos[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
                             <button class="btn-action btn-edit {% if today_data.photos[slot].status == 'posted' %}disabled{% endif %}" data-content-type="Photos" data-date-str="{{ today_data.date_str }}" data-slot="{{ slot }}" data-filename="{{ today_data.photos[slot].filename }}" data-caption-id="caption-today-photos-{{ slot }}"><i class="fas fa-edit"></i> Edit</button>
                         </div>
+                        {% endif %}
                         {% else %}
                         <div class="card-body">
                             <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No photo</span></div>
@@ -838,9 +885,11 @@ POST_REVIEW_HTML = """
                                 </div>
                             </div>
                         </div>
+                        {% if user_role == 'admin' %}
                         <div class="card-footer">
                             <a href="/posts/replace/Stories/{{ today_data.date_str }}/{{ slot }}" class="btn-action btn-replace {% if today_data.stories[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
                         </div>
+                        {% endif %}
                         {% else %}
                         <div class="card-body">
                             <div class="post-image-placeholder"><i class="fas fa-circle-notch"></i><span>No story</span></div>
@@ -891,10 +940,12 @@ POST_REVIEW_HTML = """
                                 </div>
                             </div>
                         </div>
+                        {% if user_role == 'admin' %}
                         <div class="card-footer">
                             <a href="/posts/replace/Photos/{{ tomorrow_data.date_str }}/{{ slot }}" class="btn-action btn-replace"><i class="fas fa-sync-alt"></i> Replace</a>
                             <button class="btn-action btn-edit" data-content-type="Photos" data-date-str="{{ tomorrow_data.date_str }}" data-slot="{{ slot }}" data-filename="{{ tomorrow_data.photos[slot].filename }}" data-caption-id="caption-tomorrow-photos-{{ slot }}"><i class="fas fa-edit"></i> Edit</button>
                         </div>
+                        {% endif %}
                         {% else %}
                         <div class="card-body">
                             <div class="post-image-placeholder"><i class="fas fa-image"></i><span>No photo</span></div>
@@ -938,9 +989,11 @@ POST_REVIEW_HTML = """
                                 </div>
                             </div>
                         </div>
+                        {% if user_role == 'admin' %}
                         <div class="card-footer">
                             <a href="/posts/replace/Stories/{{ tomorrow_data.date_str }}/{{ slot }}" class="btn-action btn-replace {% if tomorrow_data.stories[slot].status == 'posted' %}disabled{% endif %}"><i class="fas fa-sync-alt"></i> Replace</a>
                         </div>
+                        {% endif %}
                         {% else %}
                         <div class="card-body">
                             <div class="post-image-placeholder"><i class="fas fa-circle-notch"></i><span>No story</span></div>
@@ -1739,9 +1792,17 @@ def mark_reply_sent(reply_id, nyssa_comment_id=None):
 def login():
     error = None
     if request.method == "POST":
-        if request.form.get("password") == DASHBOARD_PASSWORD:
+        password = request.form.get("password")
+        role = None
+        
+        if password == ADMIN_PASSWORD:
+            role = 'admin'
+        elif password == GUEST_PASSWORD:
+            role = 'guest'
+        
+        if role:
             new_token = generate_auth_token()
-            add_token(new_token)
+            add_token(new_token, role)
             resp = make_response(redirect(url_for("dashboard")))
             max_age = COOKIE_MAX_AGE if request.form.get("remember") else None
             resp.set_cookie(COOKIE_NAME, new_token, max_age=max_age, httponly=True, samesite='Lax')
@@ -1774,6 +1835,7 @@ def dashboard():
     
     return render_template_string(DASHBOARD_HTML, 
         current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        user_role=get_user_role(),
         profile=profile, ig_posts=ig_posts, engagement=engagement, services=get_service_status(),
         posts_today=post_stats["posts_today"], posts_pending=post_stats["posts_pending"],
         posts_failed=post_stats["posts_failed"], photos_24h=post_stats["photos_24h"],
@@ -1797,11 +1859,12 @@ def approve():
     pending_replies = get_pending_replies_for_approval()
     return render_template_string(APPROVE_HTML,
         pending_replies=pending_replies,
+        user_role=get_user_role(),
         message=request.args.get('message'),
         error=request.args.get('error'))
 
 @app.route("/approve/update/<int:reply_id>", methods=["POST"])
-@requires_auth
+@requires_admin
 def approve_update(reply_id):
     action = request.form.get("action")
     new_text = request.form.get("reply_text", "").strip()
@@ -1835,23 +1898,24 @@ def moderation():
     comments = get_all_comments(10)
     return render_template_string(MODERATION_HTML,
         comments=comments,
+        user_role=get_user_role(),
         message=request.args.get('message'),
         error=request.args.get('error'))
 
 @app.route("/moderation/hide/<comment_id>")
-@requires_auth
+@requires_admin
 def mod_hide(comment_id):
     success, msg = hide_comment(comment_id, hide=True)
     return redirect(url_for('moderation', message=msg if success else None, error=None if success else msg))
 
 @app.route("/moderation/unhide/<comment_id>")
-@requires_auth
+@requires_admin
 def mod_unhide(comment_id):
     success, msg = hide_comment(comment_id, hide=False)
     return redirect(url_for('moderation', message=msg if success else None, error=None if success else msg))
 
 @app.route("/moderation/delete/<comment_id>")
-@requires_auth
+@requires_admin
 def mod_delete(comment_id):
     success, msg = delete_comment(comment_id)
     return redirect(url_for('moderation', message=msg if success else None, error=None if success else msg))
@@ -1879,12 +1943,13 @@ def posts_review():
     return render_template_string(POST_REVIEW_HTML,
         today_data=today_data,
         tomorrow_data=tomorrow_data,
+        user_role=get_user_role(),
         message=request.args.get('message'),
         error=request.args.get('error'),
         last_swap=request.args.get('swap'))
 
 @app.route("/posts/replace/<content_type>/<date_str>/<slot>")
-@requires_auth
+@requires_admin
 def replace_post(content_type, date_str, slot):
     success, msg = replace_post_random(content_type, date_str, slot)
     if success:
@@ -1892,7 +1957,7 @@ def replace_post(content_type, date_str, slot):
     return redirect(url_for('posts_review', error=f"Failed: {msg}"))
 
 @app.route("/posts/edit-caption", methods=["POST"])
-@requires_auth
+@requires_admin
 def edit_caption():
     content_type = request.form.get("content_type")
     date_str = request.form.get("date_str")
